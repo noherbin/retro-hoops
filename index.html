@@ -3045,7 +3045,7 @@ class Match {
   // online host: the guest's latest input state (absolute stick + held sprint + press counters + their own shot release)
   applyRemoteInput(inp) {
     if (this.remoteSide == null || !inp) return;
-    const P = this.rpad, ax = clamp(+inp.ax || 0, -1, 1), ay = clamp(+inp.ay || 0, -1, 1);
+    const P = this.rpad, ax = clamp(+inp.ax || 0, -1, 1), ay = clamp(+inp.ay || 0, -1, 1); P.iseq = +inp.seq || 0;
     P.axis.x = ax; P.axis.y = ay; if (ax || ay) P.lastInput = this.time;
     this.withRemote(() => {
       const spr = !!inp.sp; if (spr !== !!this.keys.sprint) { if (spr) this.keyDown('sprint'); else this.keyUp('sprint'); }
@@ -5085,9 +5085,10 @@ const NET = (() => {
     c.fire = () => c._chg.forEach(f => { try { f(c.remote); } catch (e) { console.error(e); } });
     c.merge = (obj, patch) => { for (const k in patch) { if (patch[k] === null) delete obj[k]; else obj[k] = patch[k]; } return obj; };
     // coalesce sends to ~30 a second
-    c.set = patch => {
+    c.set = (patch, now) => {
       if (c.closed) return;
       c.merge(c.mine, patch); c._pend = c.merge(c._pend || {}, patch);
+      if (now && c.kind !== 'room') { clearTimeout(c._flushT); c._flushT = 0; const p = c._pend; c._pend = null; c._send(p); return; } // no batching for game traffic
       if (!c._flushT) c._flushT = setTimeout(() => { c._flushT = 0; const p = c._pend; c._pend = null; if (p && !c.closed) c._send(p); }, 33);
     };
     return c;
@@ -5199,7 +5200,7 @@ const NET = (() => {
   async function multiConn(role, code) {
     const kinds = window.RH_NET_KINDS || ['peer', 'nostr', 'torrent'];
     const c = baseConn('multi', role, code), cands = []; let winner = null; c.tried = {};
-    c.set = patch => { if (c.closed) return; c.merge(c.mine, patch); (winner ? [winner] : cands).forEach(k => k.set(patch)); };
+    c.set = (patch, now) => { if (c.closed) return; c.merge(c.mine, patch); (winner ? [winner] : cands).forEach(k => k.set(patch, now)); };
     c.close = () => { c.closed = true; cands.forEach(k => { try { k.close(); } catch (e) { } }); c.setStatus('closed'); };
     const adopt = k => {
       winner = k; c.via = k.kind; S.via = k.kind;
@@ -5240,7 +5241,8 @@ const NET = (() => {
   async function localConn(role, code) { // same-browser test channel (?net=local)
     const c = baseConn('local', role, code), id = Math.random().toString(36).slice(2), ch = new BroadcastChannel('rh-' + code);
     let other = null;
-    c._send = p => ch.postMessage({ from: id, role, patch: p });
+    let at = 0; // tests can add network delay (window.RH_NET_DELAY ms each way, plus RH_NET_JITTER), kept in order
+    c._send = p => { const d = window.RH_NET_DELAY; if (!d) return ch.postMessage({ from: id, role, patch: p }); const msg = JSON.parse(JSON.stringify({ from: id, role, patch: p })); at = Math.max(at, performance.now() + d + Math.random() * (window.RH_NET_JITTER || 0)); setTimeout(() => { try { ch.postMessage(msg); } catch (e) { } }, at - performance.now()); };
     ch.onmessage = e => {
       const d = e.data; if (!d || d.from === id || d.role === role) return;
       if (other && d.from !== other) return;
@@ -5289,7 +5291,7 @@ const NET = (() => {
     const refs = m.refs.map(r => [r1(r.x), r1(r.y), r.face, Math.hypot(r.vx, r.vy) > 2 ? 1 : 0]);
     const ft = m.ft ? [FTPH.indexOf(m.ft.phase), id(m.ft.sp), m.ft.k, m.ft.n] : 0;
     const ev = m.netEv.filter(e => e[0] > (ack || 0)).slice(-14).map(e => e.map(v => typeof v === 'string' ? v.slice(0, e[1] === 'a' ? 110 : 48) : v));
-    return { t: Math.round(m.time * 1000), g, pl, ball, fx, refs, ft, ev };
+    return { t: Math.round(m.time * 1000), w: Math.round(performance.now()), is: m.rpad.iseq || 0, g, pl, ball, fx, refs, ft, ev };
   }
 
   /* ---------- guest: draw the host's game ---------- */
@@ -5298,7 +5300,8 @@ const NET = (() => {
     m.tip = { press: [null, null], t: 0 }; m._evSeen = 0; m.sn = [];
     const byId = n => n < 0 ? null : (m.T[n >> 5] || {}).all ? m.T[n >> 5].all[n & 31] || null : null;
     m._byId = byId;
-    const push = () => S.conn && S.conn.set({ in: Object.assign({}, m.gIn, { c: Object.assign({}, m.gIn.c) }) });
+    m.pred = { sp: null, x: 0, y: 0, vx: 0, vy: 0, cx: 0, cy: 0, hist: [], rtt: 0.15, sent: {}, lastIs: 0, lastSnap: null, lastAxisT: -9 };
+    const push = () => { if (!S.conn) return; m.gIn.seq = (m.gIn.seq || 0) + 1; m.pred.sent[m.gIn.seq] = performance.now(); delete m.pred.sent[m.gIn.seq - 60]; S.conn.set({ in: Object.assign({}, m.gIn, { c: Object.assign({}, m.gIn.c) }) }, true); };
     m.openMan = () => m._openMan || null;
     m.charging = () => {
       if (m.gShot) return { sp: m.gShot.sp, m: m.gShot.m, layup: m.gShot.layup };
@@ -5340,7 +5343,7 @@ const NET = (() => {
     m.setAxis = (x, y) => { const ax = Math.round(x * 100) / 100, ay = Math.round(y * 100) / 100; if (ax !== m.gIn.ax || ay !== m.gIn.ay) { m.gIn.ax = ax; m.gIn.ay = ay; push(); } };
     m.update = rdt => {
       rdt = Math.min(rdt, 0.05); m.time += rdt; m.stateT += rdt; m._wall = performance.now();
-      apply(m, rdt);
+      apply(m, rdt); predict(m, rdt);
       if (m.gShot || m.gFT) { const g = m.gShot || m.gFT; g.m += rdt * g.rate; if (g.m > 1.15) release(); if (m.gShot && (m.state !== 'live' || m.ball.owner !== m.gShot.sp && m.ball.state !== 'held')) { /* lost the ball before release */ } }
       const b = m.ball;
       if (b.state === 'shot') { m.trail.push({ x: b.x, y: b.y, z: b.z, hot: !!b.hot, fire: !!(b.shot && b.shot.onFire) }); if (m.trail.length > (b.shot && b.shot.onFire ? 16 : 9)) m.trail.shift(); }
@@ -5350,10 +5353,47 @@ const NET = (() => {
     };
     return m;
   }
+  /* the guest's own player moves on the guest's screen straight away (same speed rules as the host), and is
+     nudged toward where the host says he is: the host's newest position matches our own from about one round trip ago */
+  function predict(m, rdt) {
+    const c = m.ctrl, P = m.pred, s = m._snap; if (!P || P.off || !c || !s) return;
+    const idOf = sp => sp.ti * 32 + m.T[sp.ti].all.indexOf(sp), row = [].concat(...s.pl).find(r => r[0] === idOf(c)), now = performance.now();
+    const ax = m.gIn.ax || 0, ay = m.gIn.ay || 0, mag = Math.hypot(ax, ay), holder = m.ball.state === 'held' && m.ball.owner === c;
+    if (mag) P.lastAxisT = now;
+    const steering = mag || holder || now - P.lastAxisT < 450; // like the host: after 0.45 s without input the player guards on his own
+    const ok = m.state === 'live' && row && row[3] <= 0.05 && !(row[9] & 1) && POSES[row[5]] !== 'shoot' && steering;
+    if (P.sp !== c || !ok) { P.sp = c; P.x = c.x; P.y = c.y; P.vx = P.vy = P.cx = P.cy = 0; P.hist = []; P.on = false; return; }
+    if (!P.on) { P.on = true; P.x = c.x; P.y = c.y; }
+    c.sprint = !!m.gIn.sp && c.energy > 8;
+    const sp = m.gShot ? 0 : m.speedOf(c), v = Math.min(sp, mag * sp * 1.5), tvx = mag ? ax / mag * v : 0, tvy = mag ? ay / mag * v : 0, acc = Math.min(1, rdt * 14);
+    P.vx += (tvx - P.vx) * acc; P.vy += (tvy - P.vy) * acc;
+    P.x = clamp(P.x + P.vx * rdt, 0.4, 93.6); P.y = clamp(P.y + P.vy * rdt, 0.4, 49.6);
+    P.hist.push({ t: now, x: P.x, y: P.y }); while (P.hist.length && now - P.hist[0].t > 1500) P.hist.shift();
+    if (s !== P.lastSnap) { // a new word from the host: how far off were we?
+      P.lastSnap = s; const back = now - P.rtt * 1000; let h = null; for (const e of P.hist) { if (e.t > back) break; h = e; }
+      if (h) { const ex = row[1] - h.x, ey = row[2] - h.y; if (Math.hypot(ex, ey) > 7) { P.x += ex; P.y += ey; P.hist.forEach(e => { e.x += ex; e.y += ey; }); P.cx = P.cy = 0; } else { P.cx = ex; P.cy = ey; } }
+    }
+    const k = Math.min(1, rdt * 6), kx = P.cx * k, ky = P.cy * k; P.x += kx; P.y += ky; P.cx -= kx; P.cy -= ky; P.hist.forEach(e => { e.x += kx; e.y += ky; });
+    const dx = P.x - c.x, dy = P.y - c.y, spd = Math.hypot(P.vx, P.vy);
+    c.x = P.x; c.y = P.y;
+    if (ax) c.face = ax > 0 ? 1 : -1;
+    if (spd > 2 && (c.pose === 'stand' || c.pose === 'run' || c.pose === 'dribble')) { c.pose = 'run'; c.frame = Math.floor(m.time * spd / 3.2) % 4; }
+    if (holder) { m.ball.x += dx; m.ball.y += dy; }
+  }
   function apply(m, rdt) {
     const sn = m.sn; if (!sn.length) return;
-    const s1 = sn[sn.length - 1], s0 = sn.length > 1 ? sn[sn.length - 2] : s1;
-    const span = Math.max(30, s1.rt - s0.rt), a = Math.max(0, Math.min(1, (performance.now() - s1.rt) / span));
+    let s0, s1, a;
+    if (m.netOff != null && sn[0].w != null && sn.length > 1) {
+      m.netOff += rdt * 2; // drift a little so a lucky early packet doesn't fix the offset forever
+      const rt = performance.now() - m.netOff - 70; let i = sn.length - 1;
+      while (i > 0 && sn[i - 1].w > rt) i--;
+      if (i === 0) { s0 = s1 = sn[0]; a = 1; }
+      else { s0 = sn[i - 1]; s1 = sn[i]; a = Math.max(0, Math.min(1, (rt - s0.w) / Math.max(1, s1.w - s0.w))); }
+    } else {
+      s1 = sn[sn.length - 1]; s0 = sn.length > 1 ? sn[sn.length - 2] : s1;
+      a = Math.max(0, Math.min(1, (performance.now() - s1.rt) / Math.max(30, s1.rt - s0.rt)));
+    }
+    m._snap = sn[sn.length - 1];
     const L = (u, v) => u + (v - u) * a;
     const byId = m._byId, g = s1.g;
     m.state = MSTATES[g[0]] || 'live'; m.q = g[1]; m.clock = g[2] / 10; m.shotClock = g[3] / 10; m.T[0].score = g[4]; m.T[1].score = g[5]; m.poss = g[6] < 0 ? null : g[6];
@@ -5435,7 +5475,15 @@ const NET = (() => {
       if (S.role === 'guest') {
         if (r.cfg) S.qlen = r.cfg.qlen;
         if (r.start && r.start !== S.gameId && S.theirTeam) startGuestGame(r.start, r.cfg);
-        if (r.snap && S.match && S.phase === 'game') { const sn = S.match.sn, s = Object.assign({}, r.snap, { rt: performance.now() }); if (!sn.length || s.t > sn[sn.length - 1].t) { sn.push(s); if (sn.length > 3) sn.shift(); replay(S.match, s.ev); } }
+        if (r.snap && S.match && S.phase === 'game') {
+          const m = S.match, sn = m.sn, now = performance.now(), s = Object.assign({}, r.snap, { rt: now });
+          if (!sn.length || s.t > sn[sn.length - 1].t) {
+            sn.push(s); if (sn.length > 10) sn.shift();
+            if (s.w != null) m.netOff = Math.min(m.netOff == null ? Infinity : m.netOff, now - s.w); // fastest delivery seen = the clock offset
+            const P = m.pred; if (P && s.is > (P.lastIs || 0)) { const sent = P.sent[s.is]; if (sent) P.rtt = clamp(P.rtt * 0.8 + (now - sent) / 1000 * 0.2, 0.03, 0.8); P.lastIs = s.is; }
+            replay(m, s.ev);
+          }
+        }
         if (r.res && r.res.id === S.gameId && S.phase === 'game') { S.result = r.res; setTimeout(() => { if (S.result && S.result.id === S.gameId) { S.phase = 'final'; emit(); } }, 1200); }
       } else if (r.in && S.match) S.remoteIn = r.in;
     });
@@ -5474,9 +5522,9 @@ const NET = (() => {
   function preFrame() { if (S.role === 'host' && S.match && S.phase === 'game' && S.remoteIn) S.match.applyRemoteInput(S.remoteIn); }
   function postFrame() {
     if (S.role !== 'host' || !S.match || S.phase === 'idle' || !S.conn) return;
-    const now = performance.now(); if (now - S.lastSnapT < 48) return; S.lastSnapT = now;
+    const now = performance.now(), every = S.conn.kind === 'room' ? 48 : 33; if (now - S.lastSnapT < every) return; S.lastSnapT = now;
     const ack = S.conn.remote && S.conn.remote.in ? S.conn.remote.in.ack : 0;
-    S.conn.set({ snap: snap(S.match, ack) });
+    S.conn.set({ snap: snap(S.match, ack) }, true);
   }
   function leave(quiet) {
     try { if (S.conn) { S.conn._send({ bye: 1 }); S.conn.closed = true; S.conn.close(); } } catch (e) { }
