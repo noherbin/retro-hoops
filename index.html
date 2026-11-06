@@ -2583,6 +2583,54 @@ const SFX = (() => {
       }
     }
   }
+  /* ---------- the announcer's sound: an arena PA ----------
+     Speaker-ish EQ and a touch of drive, then a big room (a synthetic impulse response with early reflections
+     and a 2.4 s tail that darkens as it decays) and a slapback off the far wall. */
+  let voiceInNode = null;
+  function arenaIR(ac) {
+    const sr = ac.sampleRate, len = Math.floor(sr * 2.6), b = ac.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = b.getChannelData(ch); let y = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, a = Math.max(0.04, 0.9 * Math.exp(-t * 2.2));                 // high end dies away first
+        y += a * ((Math.random() * 2 - 1) - y);
+        d[i] = y * Math.exp(-t * 2.65) * (t < 0.012 ? t / 0.012 : 1);                    // ~2.6 s to fade 60 dB
+      }
+      for (const [ms, g] of [[19, 0.5], [31, -0.35], [47, 0.3], [71, -0.24], [103, 0.18], [149, 0.12]]) { const i = Math.floor(sr * (ms + ch * 3) / 1000); if (i < len) d[i] += g; }
+    }
+    return b;
+  }
+  function voiceIn(acx) {
+    const ac = acx || ctx; if (!ac) return null;
+    if (!acx && voiceInNode) return voiceInNode;
+    const dest = acx ? acx.destination : master;
+    const inp = ac.createGain(), hp = ac.createBiquadFilter(), pk = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), sat = ac.createWaveShaper(), comp = ac.createDynamicsCompressor();
+    hp.type = 'highpass'; hp.frequency.value = 150; hp.Q.value = 0.7;
+    pk.type = 'peaking'; pk.frequency.value = 2600; pk.gain.value = 4; pk.Q.value = 0.9;
+    lp.type = 'lowpass'; lp.frequency.value = 7200;
+    const n = 1024, curve = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; curve[i] = Math.tanh(x * 1.6) / Math.tanh(1.6); } sat.curve = curve;
+    comp.threshold.value = -20; comp.ratio.value = 3; comp.attack.value = 0.004; comp.release.value = 0.18; comp.knee.value = 8;
+    inp.connect(hp); hp.connect(pk); pk.connect(lp); lp.connect(sat); sat.connect(comp);
+    const dry = ac.createGain(); dry.gain.value = 0.9; comp.connect(dry); dry.connect(dest);
+    const conv = ac.createConvolver(), wet = ac.createGain(); conv.buffer = arenaIR(ac); wet.gain.value = 0.3; comp.connect(conv); conv.connect(wet); wet.connect(dest);
+    const dl = ac.createDelay(1), dlp = ac.createBiquadFilter(), fb = ac.createGain(), dg = ac.createGain();
+    dl.delayTime.value = 0.21; dlp.type = 'lowpass'; dlp.frequency.value = 2400; fb.gain.value = 0.3; dg.gain.value = 0.2;
+    comp.connect(dl); dl.connect(dlp); dlp.connect(dg); dg.connect(dest); dlp.connect(fb); fb.connect(dl);
+    if (!acx) voiceInNode = inp;
+    return inp;
+  }
+  // offline render of a run of decoded clips through the PA chain (tests)
+  async function renderVoice(bufs, gap = 0.06) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext, sr = 24000, total = bufs.reduce((a, b) => a + b.duration + gap, 0) + 2.8;
+    const oc = new OAC(1, Math.ceil(sr * total), sr), inp = voiceIn(oc); let t = 0.05;
+    for (const b of bufs) { const s = oc.createBufferSource(); s.buffer = b; s.connect(inp); s.start(t); t += b.duration + gap; }
+    const out = await oc.startRendering(), x = out.getChannelData(0); let peak = 0; for (const v of x) peak = Math.max(peak, Math.abs(v));
+    const n = x.length, dv = new DataView(new ArrayBuffer(44 + n * 2)), w = (o, str) => [...str].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)));
+    w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 32767, true);
+    let str = ''; const u8 = new Uint8Array(dv.buffer); for (let i = 0; i < u8.length; i += 32768) str += String.fromCharCode.apply(null, u8.subarray(i, i + 32768));
+    return { peak, wav: btoa(str) };
+  }
   function voiceDuck(on) { // the music and crowd sit back while the announcer talks
     vDuck = on ? 0.55 : 1; if (musicGain && ctx) musicGain.gain.setTargetAtTime(musicLevel(), ctx.currentTime, 0.08);
     if (crowdBus && ctx) crowdBus.gain.setTargetAtTime(crowdOn ? (on ? 0.7 : 1) : 0, ctx.currentTime, 0.08);
@@ -2620,7 +2668,8 @@ const SFX = (() => {
   }
   return {
     init, setEnabled, setVolume, startCrowd, stopCrowd, crowdLevel, setCrowdLive, setCrowd, voiceDuck, music, setMusic, musicDuck, renderOffline, renderFx,
-    cheer, ooh, aww, boo, hoot, chant, applause: (k, d) => applause(k, d),
+    cheer, ooh, aww, boo, hoot, chant, applause: (k, d) => applause(k, d), voiceIn: () => voiceIn(), renderVoice,
+    get ctx() { if (!ctx) init(); return ctx; },
     get volume() { return enabled ? vol : 0; },
     get on() { return enabled; },
     setQuiet(q) { quiet = q; if (q) mInt = 0; },
@@ -2656,75 +2705,48 @@ RH.SFX = SFX;
 
 'use strict';
 /* ============ RETRO HOOPS — the broadcast booth ============
-   Two voices from the browser's own speech engine: a play-by-play caller and a color analyst.
-   Lines have a priority; a bigger moment cuts off a smaller one, small talk never talks over anything,
-   and a few lines (a stat, a lead change) may queue up behind the call they follow. */
-const VOICE = (() => {
-  const ss = typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null;
-  let on = true, vol = 0.8, pbp = null, color = null, primed = false, curPrio = 0, queued = 0, picked = false;
-  const NOVELTY = /bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|hysterical|deranged|grandma|grandpa|junior|ralph|kathy|princess|eddy|flo\b|reed|rocko|sandy|shelley/i;
-  const MALE = /\b(male|guy|daniel|alex|david|mark|aaron|arthur|tom|matthew|james|ryan|christopher|eric|roger|andrew|brian|davis|tony|jason|oliver|thomas|george|rishi|lee|evan|nathan)\b/i;
-  const FEMALE = /(female|samantha|victoria|zira|karen|moira|tessa|susan|hazel|aria|jenny|emma|ava|allison|serena|fiona|catherine|libby|sonia|michelle|kate|nicky|zoe|joanna|salli|kimberly|ivy)/i;
-  function score(v) {
-    let s = 0; const n = v.name || '';
-    if (/en[-_]US/i.test(v.lang)) s += 3; else if (/en[-_]GB/i.test(v.lang)) s += 2; else if (/^en/i.test(v.lang)) s += 1;
-    if (/natural|neural|online|premium|enhanced/i.test(n)) s += 3; else if (/google/i.test(n)) s += 2;
-    if (MALE.test(n)) s += 3; if (FEMALE.test(n)) s -= 1;
-    return s;
+   A play-by-play caller and a color analyst. Their lines are recorded clips (rh-voice.mp3, made offline with
+   a neural voice) played through an arena PA chain with reverb and slapback echo; a line is a few clips joined
+   up (a phrase, a player's name, a number). If the clips can't be loaded the browser's own speech reads the
+   same lines instead. Lines have a priority: a bigger moment cuts off a smaller one, small talk never talks
+   over anything, and a few lines (a stat, a lead change) may queue up behind the call they follow. */
+
+/* ---------- line templates ----------
+   {name} a player's last name, {num} {num2} numbers, {numto} a number followed by "to": each its own clip.
+   {theTeam} {theHome} {homeCity} {qth} {pts} are recorded as part of the phrase around them. */
+const TPL_BIG = { name: 1, num: 1, num2: 1, numto: 1 };
+const PTS_STEPS = [10, 15, 20, 25, 30, 40];
+function tplParts(tpl, v) {
+  const parts = [], re = /\{(\w+)\}/g; let lit = '', i = 0, m;
+  while ((m = re.exec(tpl))) {
+    lit += tpl.slice(i, m.index); i = re.lastIndex;
+    if (TPL_BIG[m[1]]) { parts.push({ lit }); lit = ''; parts.push({ big: m[1], v: v[m[1]] }); }
+    else lit += v[m[1]] != null ? String(v[m[1]]) : '';
   }
-  function pickVoices() {
-    if (!ss) return; const vs = ss.getVoices().filter(v => /^en/i.test(v.lang) && !NOVELTY.test(v.name));
-    if (!vs.length) return; picked = true;
-    const ranked = vs.slice().sort((a, b) => score(b) - score(a));
-    pbp = ranked[0];
-    // the analyst: a different voice, ideally another man from a different region so the two are easy to tell apart
-    color = ranked.find(v => v !== pbp && MALE.test(v.name) && v.lang !== pbp.lang) || ranked.find(v => v !== pbp && MALE.test(v.name)) || ranked.find(v => v !== pbp) || pbp;
+  parts.push({ lit: lit + tpl.slice(i) });
+  return parts;
+}
+const capSentences = s => s.replace(/(^|[.!?]\s+)([a-z])/g, (_, a, b) => a + b.toUpperCase());
+function tplText(tpl, v) { return capSentences(tplParts(tpl, v).map(p => p.lit != null ? p.lit : p.big === 'numto' ? p.v + ' to' : p.v).join('')).replace(/\s+/g, ' ').trim(); }
+function fragText(s) { s = s.replace(/^[\s,.;:]+/, '').replace(/\s+/g, ' ').trim(); return /[a-z0-9]/i.test(s) ? s[0].toUpperCase() + s.slice(1) : ''; }
+// the clips a line plays, in order: p = play-by-play voice, c = analyst; ":" a phrase, "n:" a name, "#:" a number, "t:" a number + "to"
+function tplKeys(tpl, v, color) {
+  const P = color ? 'c' : 'p', keys = [];
+  for (const p of tplParts(tpl, v)) {
+    if (p.lit != null) { const t = fragText(p.lit); if (t) keys.push(P + ':' + t); }
+    else keys.push(P + (p.big === 'name' ? 'n:' : p.big === 'numto' ? 't:' : '#:') + p.v);
   }
-  if (ss) { pickVoices(); try { ss.addEventListener('voiceschanged', pickVoices); } catch (e) { ss.onvoiceschanged = pickVoices; } }
-  // iOS only lets a page talk after the first tap: say nothing, quietly, during that tap
-  function prime() { if (primed || !ss) return; primed = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; ss.speak(u); } catch (e) { } }
-  let gen = 0, holdUntil = 0;
-  function say(text, o = {}) {
-    if (!ss || !on || vol < 0.02 || !text) return false;
-    if (!picked) pickVoices();
-    const prio = o.prio || 1, busy = ss.speaking || ss.pending || performance.now() < holdUntil;
-    let delay = 0;
-    if (busy) {
-      if (o.chain && queued < 1) queued++;                                     // follows the current call
-      else if (prio > curPrio) { gen++; ss.cancel(); queued = 0; delay = 70; }  // a bigger moment cuts in (a beat after the cancel, or Safari drops it)
-      else return false;                                                       // nothing new is worth talking over this
-    }
-    const u = new SpeechSynthesisUtterance(text), v = o.color ? color : pbp, g = gen;
-    if (v) u.voice = v;
-    u.lang = (v && v.lang) || 'en-US';
-    u.rate = o.rate || (o.color ? 1.02 : 1.12); u.pitch = o.pitch ?? (o.color ? (color === pbp ? 0.8 : 0.95) : 1.05); u.volume = vol;
-    // a cut-off line reports its end late: only the current generation may touch the state
-    u.onstart = () => { if (g !== gen) return; curPrio = prio; if (RH.SFX) RH.SFX.voiceDuck(true); };
-    u.onend = u.onerror = () => { if (g !== gen) return; if (queued > 0) queued--; else { curPrio = 0; if (RH.SFX) RH.SFX.voiceDuck(false); } };
-    if (!busy || delay) curPrio = prio;
-    const go = () => { if (g !== gen) return; try { ss.speak(u); } catch (e) { } };
-    if (delay) { holdUntil = performance.now() + delay + 30; setTimeout(go, delay); } else go();
-    return true;
-  }
-  function stop() { if (!ss) return; gen++; queued = 0; curPrio = 0; holdUntil = 0; try { ss.cancel(); } catch (e) { } if (RH.SFX) RH.SFX.voiceDuck(false); }
-  return {
-    say, stop, prime,
-    setOn(b) { on = !!b; if (!on) stop(); },
-    setVolume(v) { vol = Math.max(0, Math.min(1, v)); },
-    get available() { return !!ss; },
-    get voices() { return { pbp: pbp && pbp.name, color: color && color.name }; }
-  };
-})();
+  return keys;
+}
 
 /* ---------- what they say ----------
-   {name} the player's last name, {team} the team's nickname, {city}, {n} a number, {pts} points, {qth} "first".
    prio: 1 small talk .. 5 game winner. p: chance to say it at all. cd: seconds before this kind can come up again.
-   color: the analyst says it. chain: may queue behind the call before it. */
+   color: the analyst says it. chain: may queue behind the call before it. keys: recorded specials (the long green). */
 const BOOTH = {
-  intro: { prio: 2, lines: ['Good evening, and welcome to {homeCity}! The {away} visit the {home} tonight.', 'Welcome in to {homeCity}, where the {home} host the {away}. Should be a good one.', "It's the {away} and the {home} tonight. Let's get it on!"] },
-  tip: { prio: 2, lines: ["And we're underway!", 'Tip-off, here we go!', 'The {team} win the tip.'] },
-  green: { prio: 4, rate: 0.68, pitch: 1.08, lines: ['Greeeeeen!', 'Greeeeeen!', 'Greeeeeen!', 'Greeeeeen light!'] },
-  greenFT: { prio: 2, p: 0.6, rate: 0.72, pitch: 1.08, lines: ['Greeeeeen!'] },
+  intro: { prio: 2, lines: ['Good evening, and welcome to {homeCity}!', 'Welcome in to {homeCity}! {theHome} are at home tonight, and this place is packed!', "Ladies and gentlemen, welcome to {homeCity}. Let's play some basketball!"] },
+  tip: { prio: 2, lines: ["And we're underway!", 'Tip-off, here we go!', '{theTeam} win the tip.'] },
+  green: { prio: 4, lines: ['Greeeeeen!'], keys: ['x:green1', 'x:green2', 'x:green3'], rate: 0.68, pitch: 1.08 },
+  greenFT: { prio: 2, p: 0.6, lines: ['Greeeeeen!'], keys: ['x:green2', 'x:green3'], rate: 0.72, pitch: 1.08 },
   three: { prio: 3, chain: 1, lines: ['Three ball!', 'From downtown!', 'Bang!', 'Splash!', '{name}, from deep!', 'Count it, three!', 'Nothing but net, from three!', 'Wet!', '{name}, for three... got it!'] },
   deep: { prio: 3, chain: 1, lines: ['From the parking lot!', 'Way downtown!', 'Are you kidding me? From way out!', 'From the logo!', '{name}, from another zip code!'] },
   dunk: { prio: 3, chain: 1, p: 0.85, lines: ['Slam dunk!', 'Throws it down!', '{name}, with authority!', 'Oh, he hammered it home!', 'Boom! Big flush!', 'Jam!', '{name} rocks the rim!', 'Tomahawk!', '{name}, two hands!', 'Posterized!', 'He threw that one down!', 'Rim-rattler!'] },
@@ -2745,22 +2767,185 @@ const BOOTH = {
   shotclock: { prio: 2, lines: ['Shot clock violation.', 'Shot clock expires.', "Couldn't get a shot off in time."] },
   turnover: { prio: 1, p: 0.4, cd: 8, lines: ['Turnover.', 'Out of bounds.', 'Careless with the ball.', 'Gives it away.'] },
   foul: { prio: 1, p: 0.5, cd: 6, lines: ['Whistle. Foul on {name}.', 'Foul on {name}.', 'Reach-in, {name}.', "That's a foul on {name}."] },
-  bonus: { prio: 1, color: 1, chain: 1, cd: 60, lines: ['The {team} are in the penalty.', 'And that puts them in the bonus.'] },
+  bonus: { prio: 1, color: 1, chain: 1, cd: 60, lines: ['{theTeam} are in the penalty.', 'And that puts them in the bonus.'] },
   qend: { prio: 3, lines: ["That'll do it for the {qth} quarter.", 'End of the {qth}.', 'And that is the end of the {qth} quarter.'] },
-  half: { prio: 3, lines: ["That's halftime. {lead}", 'Halftime here. {lead}', 'We go to the break. {lead}'] },
+  half: { prio: 3, lines: ["That's halftime.", 'Halftime here.', 'We go to the break.'] },
+  halfLead: { prio: 2, chain: 1, lines: ['{theTeam} lead by {num}.'] },
+  halfTie: { prio: 2, chain: 1, lines: ['All tied at {num}.'] },
   ot: { prio: 3, lines: ["We're going to overtime!", 'Tied at the end of regulation! Free basketball!'] },
-  final: { prio: 3, chain: 1, lines: ["That's the ballgame! The {team} win it, {ws} to {ls}.", 'Final buzzer! The {team} take it, {ws} to {ls}.', 'And that is a wrap. {team} win, {ws} to {ls}.'] },
+  final: { prio: 3, chain: 1, lines: ["That's the ballgame! {theTeam} win it, {numto} {num2}.", 'Final buzzer! {theTeam} take it, {numto} {num2}.', 'And that is a wrap. {theTeam} win, {numto} {num2}.'] },
   clutch: { prio: 2, color: 1, lines: ['Under thirty seconds, and this one is tight.', 'Crunch time. Somebody has to make a play.', 'This is where stars are made.'] },
   tie: { prio: 1, color: 1, chain: 1, p: 0.6, cd: 20, lines: ["We're all tied up.", 'Back to even.', 'And this game is tied.'] },
-  lead: { prio: 1, color: 1, chain: 1, p: 0.5, cd: 20, lines: ['The {team} take the lead.', 'And that puts the {team} in front.', 'New lead for the {team}.'] },
-  run: { prio: 2, color: 1, chain: 1, cd: 25, lines: ["That's {an} {n} to nothing run for the {team}.", 'The {team} on {an} {n} to nothing run. Somebody needs a stop.', '{n} straight points for the {team}.'] },
-  hot: { prio: 1, color: 1, chain: 1, cd: 30, lines: ['{name} has {pts} points already.', "That's {pts} for {name} tonight.", '{name} is up to {pts}.', '{pts} for {name}. You can not leave him open.'] },
+  lead: { prio: 1, color: 1, chain: 1, p: 0.5, cd: 20, lines: ['{theTeam} take the lead.', 'And that puts {theTeam} in front.', 'New lead for {theTeam}.'] },
+  run: { prio: 2, color: 1, chain: 1, cd: 25, lines: ['{theTeam} have scored {num} straight.', '{num} unanswered points for {theTeam}. Somebody needs a stop.'] },
+  hot: { prio: 1, color: 1, chain: 1, cd: 30, lines: ['{name} is up to {num}.', '{num} points now for {name}. You can not leave him open.'] },
   sub: { prio: 1, color: 1, p: 0.3, cd: 40, lines: ['Fresh legs coming in.', '{name} checks in.', 'Here comes {name} off the bench.'] },
   crowd: { prio: 1, color: 1, cd: 90, lines: ['Listen to this crowd!', 'The building is shaking!', 'This place is rocking!'] },
   defense: { prio: 1, color: 1, cd: 120, p: 0.5, lines: ['The crowd wants a stop.', 'They need a stop here.'] },
-  stat: { prio: 1, color: 1, chain: 1, cd: 30, lines: ['{text}'] }   // the analyst's numbers, built from the box score in the match
+  stat: { prio: 1, color: 1, chain: 1, cd: 30, lines: ['{tpl}'] } // filled by the match with one of STATS
 };
-Object.assign(RH, { VOICE, BOOTH });
+// the analyst's numbers (the match picks one that fits the box score)
+const STATS = {
+  top: '{name} leads {theTeam} with {num} points.',
+  threeHot: '{theTeam} are shooting it well from three.',
+  threeCold: '{theTeam} just can not buy one from deep tonight.',
+  turnovers: '{theTeam} have to take care of the ball.',
+  reb: '{name} is cleaning the glass. {num} rebounds.',
+  ast: '{num} assists for {name}. He is finding the open man.',
+  fouls: '{name} is in foul trouble. He has to be careful now.',
+  blk: '{num} blocks for {name}. He is protecting the rim.',
+  margin: '{theTeam} need a run here.'
+};
+
+/* ---------- every clip the booth could ask for (used to record the voice pack) ---------- */
+function boothManifest(teams, names, maxScore = 140, maxStat = 80) {
+  const out = {}, add = (key, text, voice) => { if (!out[key]) out[key] = { text, voice }; };
+  const domains = { theTeam: teams.map(t => 'the ' + t.name), qth: ['first', 'second', 'third'], pts: PTS_STEPS };
+  const expand = (tpl, color) => {
+    const smalls = [...new Set([...tpl.matchAll(/\{(\w+)\}/g)].map(m => m[1]).filter(k => !TPL_BIG[k]))];
+    let combos = [{}];
+    for (const k of smalls) {
+      if (k === 'theHome' || k === 'homeCity') { if (!combos[0].homeCity) combos = combos.flatMap(c => teams.map(t => Object.assign({}, c, { theHome: 'the ' + t.name, homeCity: t.city }))); continue; }
+      combos = combos.flatMap(c => (domains[k] || ['']).map(x => Object.assign({}, c, { [k]: x })));
+    }
+    for (const c of combos) for (const key of tplKeys(tpl, Object.assign({ name: 'X', num: 0, num2: 0, numto: 0 }, c), color)) if (/^[pc]:/.test(key)) add(key, key.slice(2), color ? 'c' : 'p');
+  };
+  for (const L of Object.values(BOOTH)) for (const l of L.lines) if (l !== '{tpl}' && !L.keys) expand(l, !!L.color);
+  for (const t of Object.values(STATS)) expand(t, true);
+  for (const n of names) { add('pn:' + n, n, 'p'); add('cn:' + n, n, 'c'); }
+  for (let i = 0; i <= maxScore; i++) { add('p#:' + i, String(i), 'p'); add('pt:' + i, i + ' to', 'p'); }
+  for (let i = 0; i <= maxStat; i++) add('c#:' + i, String(i), 'c');
+  for (const k of ['x:green1', 'x:green2', 'x:green3']) add(k, 'Green!', 'p');
+  return out;
+}
+
+const VOICE = (() => {
+  /* ---------- the recorded voice pack ---------- */
+  let pack = null, packState = 'none', packData = null; const decoded = new Map(), decoding = new Map();
+  async function loadPack(base = '') {
+    if (packState !== 'none') return; packState = 'loading';
+    try {
+      const idx = await (await fetch(base + 'rh-voice.json')).json();
+      const buf = await (await fetch(base + 'rh-voice.mp3')).arrayBuffer();
+      if (!idx || !idx.clips || buf.byteLength < 1000) throw new Error('empty pack');
+      pack = idx; packData = buf; packState = 'ready';
+      for (const k of ['x:green1', 'x:green2', 'x:green3']) decode(k); // the one that has to be instant
+    } catch (e) { packState = 'failed'; }
+  }
+  function decode(key) {
+    if (decoded.has(key)) return Promise.resolve(decoded.get(key));
+    if (decoding.has(key)) return decoding.get(key);
+    const c = pack && pack.clips[key], ac = RH.SFX && RH.SFX.ctx; if (!c || !ac) return Promise.resolve(null);
+    const p = new Promise(res => { try { ac.decodeAudioData(packData.slice(c[0], c[0] + c[1]), b => res(b), () => res(null)); } catch (e) { res(null); } })
+      .then(b => { decoding.delete(key); if (b) { decoded.set(key, b); if (decoded.size > 120) decoded.delete(decoded.keys().next().value); } return b; });
+    decoding.set(key, p); return p;
+  }
+  // the lines in the air: each knows its priority, when it ends (once its clips are decoded) and the gain to fade it with
+  let active = [], unduckT = null;
+  function live(now) { active = active.filter(l => !l.dead && (l.pending || now < l.end - 0.04)); return active; }
+  function kill(l) {
+    l.dead = true; const ac = RH.SFX.ctx, now = ac.currentTime;
+    try { const g = l.gain.gain; g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); g.linearRampToValueAtTime(0.0001, now + 0.06); } catch (e) { }
+    l.srcs.forEach(s => { try { s.stop(now + 0.07); } catch (e) { } });
+  }
+  function unduckLater() {
+    clearTimeout(unduckT); const ac = RH.SFX.ctx, ls = live(ac.currentTime); if (!ls.length) { RH.SFX.voiceDuck(false); return; }
+    if (ls.some(l => l.pending)) return; // re-checked when that line is scheduled
+    unduckT = setTimeout(unduckLater, (Math.max(...ls.map(l => l.end)) - ac.currentTime) * 1000 + 40);
+  }
+  function playClips(keys, o) {
+    const ac = RH.SFX.ctx, out = RH.SFX.voiceIn(); if (!ac || !out) return false;
+    const prio = o.prio || 1, act = live(ac.currentTime);
+    let prev = null;
+    if (act.length) {
+      if (o.chain && act.length < 2) prev = act[act.length - 1];                          // follows the current call
+      else if (prio > Math.max(...act.map(l => l.prio))) { act.forEach(kill); active = []; } // a bigger moment cuts in
+      else return false;                                                                  // nothing new is worth talking over this
+    }
+    const gain = ac.createGain(); gain.gain.value = vol * (o.color ? 0.92 : 1); gain.connect(out);
+    const line = { prio, pending: true, end: 0, srcs: [], gain, dead: false }; active.push(line);
+    line.ready = Promise.all([prev && prev.ready, Promise.all(keys.map(decode))]).then(([, bufs]) => {
+      if (line.dead) return;
+      if (bufs.some(b => !b)) { line.dead = true; unduckLater(); return; }
+      let t = Math.max(ac.currentTime + 0.02, prev && !prev.dead ? prev.end + 0.15 : 0);
+      keys.forEach((k, i) => {
+        const s = ac.createBufferSource(); s.buffer = bufs[i]; s.connect(gain); s.start(t); line.srcs.push(s);
+        t += bufs[i].duration + (k.includes('n:') || k.includes('#:') || k.includes('t:') ? 0.02 : /[.!?]$/.test(k) ? 0.1 : 0.04); // a beat around names and numbers
+      });
+      line.end = t; line.pending = false;
+      RH.SFX.voiceDuck(true); unduckLater();
+    });
+    return true;
+  }
+
+  /* ---------- the browser's own speech (fallback when the pack is missing) ---------- */
+  const ss = typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null;
+  let on = true, vol = 0.8, pbp = null, color = null, primed = false, curPrio = 0, queued = 0, picked = false;
+  const NOVELTY = /bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|hysterical|deranged|grandma|grandpa|junior|ralph|kathy|princess|eddy|flo\b|reed|rocko|sandy|shelley/i;
+  const MALE = /\b(male|guy|daniel|alex|david|mark|aaron|arthur|tom|matthew|james|ryan|christopher|eric|roger|andrew|brian|davis|tony|jason|oliver|thomas|george|rishi|lee|evan|nathan)\b/i;
+  const FEMALE = /(female|samantha|victoria|zira|karen|moira|tessa|susan|hazel|aria|jenny|emma|ava|allison|serena|fiona|catherine|libby|sonia|michelle|kate|nicky|zoe|joanna|salli|kimberly|ivy)/i;
+  function score(v) {
+    let s = 0; const n = v.name || '';
+    if (/en[-_]US/i.test(v.lang)) s += 3; else if (/en[-_]GB/i.test(v.lang)) s += 2; else if (/^en/i.test(v.lang)) s += 1;
+    if (/natural|neural|online|premium|enhanced/i.test(n)) s += 3; else if (/google/i.test(n)) s += 2;
+    if (MALE.test(n)) s += 3; if (FEMALE.test(n)) s -= 1;
+    return s;
+  }
+  function pickVoices() {
+    if (!ss) return; const vs = ss.getVoices().filter(v => /^en/i.test(v.lang) && !NOVELTY.test(v.name));
+    if (!vs.length) return; picked = true;
+    const ranked = vs.slice().sort((a, b) => score(b) - score(a));
+    pbp = ranked[0];
+    color = ranked.find(v => v !== pbp && MALE.test(v.name) && v.lang !== pbp.lang) || ranked.find(v => v !== pbp && MALE.test(v.name)) || ranked.find(v => v !== pbp) || pbp;
+  }
+  if (ss) { pickVoices(); try { ss.addEventListener('voiceschanged', pickVoices); } catch (e) { ss.onvoiceschanged = pickVoices; } }
+  function prime() { if (primed || !ss) return; primed = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; ss.speak(u); } catch (e) { } }
+  let gen = 0, holdUntil = 0;
+  function speak(text, o) {
+    if (!ss) return false;
+    if (!picked) pickVoices();
+    const prio = o.prio || 1, busy = ss.speaking || ss.pending || performance.now() < holdUntil;
+    let delay = 0;
+    if (busy) {
+      if (o.chain && queued < 1) queued++;
+      else if (prio > curPrio) { gen++; ss.cancel(); queued = 0; delay = 70; }
+      else return false;
+    }
+    const u = new SpeechSynthesisUtterance(text), v = o.color ? color : pbp, g = gen;
+    if (v) u.voice = v;
+    u.lang = (v && v.lang) || 'en-US';
+    u.rate = o.rate || (o.color ? 1.02 : 1.12); u.pitch = o.pitch ?? (o.color ? (color === pbp ? 0.8 : 0.95) : 1.05); u.volume = vol;
+    u.onstart = () => { if (g !== gen) return; curPrio = prio; if (RH.SFX) RH.SFX.voiceDuck(true); };
+    u.onend = u.onerror = () => { if (g !== gen) return; if (queued > 0) queued--; else { curPrio = 0; if (RH.SFX) RH.SFX.voiceDuck(false); } };
+    if (!busy || delay) curPrio = prio;
+    const go = () => { if (g !== gen) return; try { ss.speak(u); } catch (e) { } };
+    if (delay) { holdUntil = performance.now() + delay + 30; setTimeout(go, delay); } else go();
+    return true;
+  }
+  // a line: the recorded clips when the pack has them all, otherwise the device voice (only if there's no pack at all)
+  function say(text, o = {}) {
+    if (!on || vol < 0.02 || !text) return false;
+    if (packState === 'ready') return o.keys && o.keys.every(k => pack.clips[k]) ? playClips(o.keys, o) : false;
+    if (packState === 'loading' || packState === 'none') return false;
+    return speak(text, o);
+  }
+  function stop() {
+    if (ss) { gen++; queued = 0; curPrio = 0; holdUntil = 0; try { ss.cancel(); } catch (e) { } }
+    if (active.length) { active.forEach(kill); active = []; }
+    clearTimeout(unduckT); if (RH.SFX) RH.SFX.voiceDuck(false);
+  }
+  return {
+    say, stop, prime, loadPack, decode,
+    setOn(b) { on = !!b; if (!on) stop(); },
+    setVolume(v) { vol = Math.max(0, Math.min(1, v)); },
+    get available() { return !!ss || packState === 'ready' || packState === 'loading'; },
+    get packState() { return packState; },
+    get pack() { return pack; },
+    get voices() { return { pbp: pbp && pbp.name, color: color && color.name }; },
+    get _active() { return active.map(l => ({ prio: l.prio, pending: l.pending, end: +l.end.toFixed(2), dead: l.dead })); }
+  };
+})();
+Object.assign(RH, { VOICE, BOOTH, STATS, boothManifest, tplText, tplKeys });
 
 'use strict';
 /* ============ RETRO HOOPS — on-court gameplay engine ============ */
@@ -2903,17 +3088,18 @@ class Match {
     if (L.prio <= 1 && !L.chain && now - b.last < 4) return false; // small talk waits for a quiet moment
     const sp = c.sp, tm = c.ti != null ? this.T[c.ti].t : sp ? this.T[sp.ti].t : null;
     const recent = b.said[kind] || (b.said[kind] = []);
-    let opts = L.lines.filter(l => sp || !/\{name\}/.test(l)); const fresh = opts.filter(l => !recent.includes(l)); if (fresh.length) opts = fresh;
-    if (!opts.length) return false;
+    let opts = kind === 'stat' ? [c.tpl] : L.lines.filter(l => (sp || !/\{name\}/.test(l)) && (tm || !/\{theTeam\}/.test(l)));
+    const fresh = opts.filter(l => !recent.includes(l)); if (fresh.length) opts = fresh;
+    if (!opts.length || !opts[0]) return false;
     const line = pick(opts); recent.push(line); if (recent.length > Math.min(3, L.lines.length - 1)) recent.shift(); b.at[kind] = now; b.last = now;
-    const text = line.replace(/\{(\w+)\}/g, (_, k) => k === 'name' ? (sp ? sp.p.last : '') : k === 'team' ? (tm ? tm.name : '') : k === 'city' ? (tm ? tm.city : '')
-      : k === 'an' ? (/^(8|11|18|8\d)$/.test(String(c.n)) ? 'an' : 'a') : k === 'home' ? this.T[0].t.name : k === 'away' ? this.T[1].t.name : k === 'homeCity' ? this.T[0].t.city : c[k] != null ? String(c[k]) : '');
-    this.say(text, L.prio, L.color ? 1 : 0, L.rate || 0, L.pitch || 0, L.chain ? 1 : 0);
+    const v = { name: sp ? sp.p.last : '', theTeam: tm ? 'the ' + tm.name : '', theHome: 'the ' + this.T[0].t.name, homeCity: this.T[0].t.city, qth: c.qth, num: c.num, num2: c.num2, numto: c.numto };
+    const keys = L.keys ? [pick(L.keys)] : RH.tplKeys(line, v, !!L.color);
+    this.say(RH.tplText(line, v), L.prio, L.color ? 1 : 0, L.rate || 0, L.pitch || 0, L.chain ? 1 : 0, keys);
     return true;
   }
-  say(text, prio = 1, color = 0, rate = 0, pitch = 0, chain = 0) { // (an online guest hears the host's lines through this)
+  say(text, prio = 1, color = 0, rate = 0, pitch = 0, chain = 0, keys = null) { // (an online guest hears the host's lines through this)
     if (this.o.attract || !RH.VOICE) return;
-    RH.VOICE.say(text, { prio, color: !!color, rate: rate || undefined, pitch: pitch || undefined, chain: !!chain });
+    RH.VOICE.say(text, { prio, color: !!color, rate: rate || undefined, pitch: pitch || undefined, chain: !!chain, keys });
   }
   // the analyst at a dead ball: one fact from the box score, picked at random from the ones worth saying
   colorTalk() {
@@ -2923,31 +3109,31 @@ class Match {
     for (const ti of [0, 1]) {
       const all = this.T[ti].all, sum = k => all.reduce((a, sp) => a + (B(sp.p.id)[k] || 0), 0);
       const top = all.slice().sort((a, b) => B(b.p.id).pts - B(a.p.id).pts)[0], tp = B(top.p.id);
-      const add = (key, text) => facts.push({ key, text });
-      if (tp.pts >= 8) add('top' + ti, `${nm(top.p)} leads the ${T(ti)} with ${tp.pts} points.`);
-      const tm = sum('tpm'), ta = sum('tpa'); if (ta >= 5) add('tp' + ti, tm / ta >= 0.4 ? `The ${T(ti)} are ${tm} of ${ta} from three. They are shooting it well.` : `The ${T(ti)} just ${tm} of ${ta} from deep tonight.`);
-      const to = sum('to'); if (to >= 6) add('to' + ti, `${to} turnovers now for the ${T(ti)}. They have to take care of the ball.`);
+      const add = (key, stat, c) => facts.push({ key, c: Object.assign({ tpl: RH.STATS[stat] }, c) });
+      if (tp.pts >= 8) add('top' + ti, 'top', { sp: top, ti, num: tp.pts });
+      const ta = sum('tpa'); if (ta >= 5) add('tp' + ti, sum('tpm') / ta >= 0.4 ? 'threeHot' : 'threeCold', { ti });
+      if (sum('to') >= 6) add('to' + ti, 'turnovers', { ti });
       for (const sp of all) {
         const x = B(sp.p.id), id = sp.p.id;
-        if (x.reb >= 6) add('reb' + id, `${nm(sp.p)} has ${x.reb} rebounds. He is cleaning the glass.`);
-        if (x.ast >= 4) add('ast' + id, `${x.ast} assists for ${nm(sp.p)}. He is finding the open man.`);
-        if (sp.pf >= 4 && sp.pf < 6) add('pf' + id + sp.pf, `${nm(sp.p)} has ${sp.pf} fouls. He has to be careful now.`);
-        if (x.blk >= 3) add('blk' + id, `${x.blk} blocks for ${nm(sp.p)}. He is protecting the rim.`);
+        if (x.reb >= 6) add('reb' + id, 'reb', { sp, num: x.reb });
+        if (x.ast >= 4) add('ast' + id, 'ast', { sp, num: x.ast });
+        if (sp.pf >= 4 && sp.pf < 6) add('pf' + id + sp.pf, 'fouls', { sp, num: sp.pf });
+        if (x.blk >= 3) add('blk' + id, 'blk', { sp, num: x.blk });
       }
     }
-    const d = this.T[0].score - this.T[1].score; if (Math.abs(d) >= 12) { const lead = d > 0 ? 0 : 1; facts.push({ key: 'margin', text: `The ${T(lead)} up ${Math.abs(d)}. The ${T(1 - lead)} need a run here.` }); }
+    const d = this.T[0].score - this.T[1].score; if (Math.abs(d) >= 12) facts.push({ key: 'margin', c: { tpl: RH.STATS.margin, ti: d > 0 ? 1 : 0 } }); // the trailing team needs a run
     const seen = this.booth.facts || (this.booth.facts = {}), fresh = facts.filter(f => this.time - (seen[f.key] ?? -999) > 240); // each kind of fact at most every few minutes
     if (!fresh.length) return;
-    const f = pick(fresh); if (this.call('stat', { text: f.text })) seen[f.key] = this.time;
+    const f = pick(fresh); if (this.call('stat', f.c)) seen[f.key] = this.time;
   }
   // after any score: runs, lead changes and hot hands, for the analyst
   scoreTalk(ti, pts, sp) {
     const my = this.T[ti].score, their = this.T[this.opp(ti)].score, before = my - pts, r = this.run;
     if (r.ti === ti) r.n += pts; else { r.ti = ti; r.n = pts; r.said = 0; }
-    if (r.n >= 8 && r.n - r.said >= (r.said ? 5 : 8)) { if (this.call('run', { ti, n: r.n })) r.said = r.n; }
+    if (r.n >= 8 && r.n - r.said >= (r.said ? 5 : 8)) { if (this.call('run', { ti, num: r.n })) r.said = r.n; }
     if (my === their && my > 0) this.call('tie');
     else if (my > their && before <= their) this.call('lead', { ti });
-    if (sp) { const p = this.box[sp.p.id].pts; for (const th of [10, 15, 20, 25, 30, 40]) if (p >= th && p - pts < th) { this.call('hot', { sp, pts: p }); break; } }
+    if (sp) { const p = this.box[sp.p.id].pts; for (const th of [10, 15, 20, 25, 30, 40]) if (p >= th && p - pts < th) { this.call('hot', { sp, num: p }); break; } }
   }
   confetti(colors, n = 80) { for (let i = 0; i < n; i++) this.parts.push({ x: rand(0, VW), y: rand(-60, 0), vx: rand(-20, 20), vy: rand(30, 80), c: pick(colors), life: rand(2.5, 4.5), t: 0, w: randi(1, 2) }); }
   stat(sp, k, n = 1) { this.box[sp.p.id][k] += n; }
@@ -3679,8 +3865,9 @@ class Match {
     this.state = 'qbreak'; this.stateT = 0;
     const lbl = this.q === 2 ? 'HALFTIME' : this.q >= 4 ? 'END OF REGULATION' : `END OF ${['', '1ST', '2ND', '3RD', '4TH'][this.q] || 'OT'}`;
     this.banner(lbl, `${this.T[1].t.abbr} ${s1}  -  ${this.T[0].t.abbr} ${s0}`, 2.4, PAL.cream);
-    const lead = s0 === s1 ? `All tied at ${s0}.` : `The ${this.T[s0 > s1 ? 0 : 1].t.name} lead by ${Math.abs(s0 - s1)}.`;
-    if (this.q >= 4) this.call('ot'); else if (this.q === 2) this.call('half', { lead }); else this.call('qend', { qth: ['', 'first', 'second', 'third'][this.q] || 'first' });
+    if (this.q >= 4) this.call('ot');
+    else if (this.q === 2) { this.call('half'); if (s0 === s1) this.call('halfTie', { num: s0 }); else this.call('halfLead', { ti: s0 > s1 ? 0 : 1, num: Math.abs(s0 - s1) }); }
+    else this.call('qend', { qth: ['', 'first', 'second', 'third'][this.q] || 'first' });
     if (this.q === 2 && s0 > s1) SFX.applause(0.7, 2.5);
   }
   finish() {
@@ -3691,7 +3878,7 @@ class Match {
     this.T[w].on.forEach(sp => sp.celebrate = 4);
     this.confetti([this.T[w].t.c1, this.T[w].t.c2, PAL.cream], gw ? 160 : 90);
     if (w === 0) { SFX.cheer(1.6); SFX.applause(1.3, 4.5); } else { SFX.aww(1.1); SFX.applause(0.3, 2.5); }
-    this.call('final', { ti: w, ws: this.T[w].score, ls: this.T[1 - w].score });
+    this.call('final', { ti: w, numto: this.T[w].score, num2: this.T[1 - w].score });
     if (this.isUser(w)) setTimeout(() => SFX.jingle(), 700);
   }
   result() {
@@ -6040,7 +6227,7 @@ function renderSettings() {
       <div><p class="disp tiny" style="margin:0 0 6px">SOUND</p>${seg('sound', [true, false], ['ON', 'OFF'])}</div>
       <div><label class="disp tiny" for="vol">VOLUME</label><input id="vol" type="range" min="0" max="1" step="0.05" value="${st.volume}" data-act="volume" style="width:100%;accent-color:var(--orange)"></div>
       <div><p class="disp tiny" style="margin:0 0 6px">MUSIC</p>${seg('music', [true, false], ['ON', 'OFF'])}</div>
-      <div><p class="disp tiny" style="margin:0 0 6px">ANNOUNCER</p>${seg('announcer', [true, false], ['ON', 'OFF'])}<p class="tiny muted" style="margin:6px 0 0">${RH.VOICE.available ? 'Play-by-play and color commentary, spoken by your device.' : 'This browser has no speech voices, so the booth stays quiet.'}</p></div>
+      <div><p class="disp tiny" style="margin:0 0 6px">ANNOUNCER</p>${seg('announcer', [true, false], ['ON', 'OFF'])}<p class="tiny muted" style="margin:6px 0 0">${RH.VOICE.packState === 'failed' ? (RH.VOICE.available ? "Couldn't load the recorded announcer, so your device's voice reads the calls." : 'This browser has no speech voices, so the booth stays quiet.') : 'Play-by-play and color commentary, live from the arena PA.'}</p></div>
       <div><p class="disp tiny" style="margin:0 0 6px">CROWD</p>${seg('crowd', [true, false], ['ON', 'OFF'])}</div>
     </div></fieldset>
     <fieldset class="panel"><legend>Game</legend><div class="list">
@@ -6353,6 +6540,7 @@ function boot() {
   window.addEventListener('resize', sizeCanvas);
   new ResizeObserver(sizeCanvas).observe(document.body);
   if (RH.load()) { applySettings(); renderMenu(); } else renderTitle();
+  RH.VOICE.loadPack(); // the announcer's recorded voice, in the background
   requestAnimationFrame(frame);
 }
 RH.UI = UI; RH.boot = boot; RH.ACT = ACT; RH.getMatch = () => MATCH;
