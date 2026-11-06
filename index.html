@@ -155,11 +155,12 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; font-varian
 .versus { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
 .vs-side { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; min-width: 0; }
 .vs-side canvas { width: 168px; height: 192px; }
+.vs-side > img { width: 150px; height: auto; }
 .vs-side .bign { font-family: var(--f-display); font-weight: 700; font-size: clamp(18px, 3vw, 30px); line-height: 1; }
 .vs-mid { display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .vs-mid .vs { font-family: var(--f-display); font-size: 40px; color: var(--orange); text-shadow: 3px 3px 0 var(--ink); }
 .rating-row { display: flex; gap: 8px; align-items: center; font-family: var(--f-display); font-size: 13px; }
-.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; font-size: 14px; }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 20px; font-size: 14px; }
 .keys b, kbd { font-family: var(--f-display); font-size: 12px; border: 2px solid var(--cream); padding: 1px 6px; margin-right: 6px; background: var(--navy-d); font-weight: 400; }
 .keys > div { display: flex; gap: 8px; align-items: flex-start; } .keys .kk { flex: none; display: flex; gap: 3px; } .keys .kk kbd { margin-right: 0; }
 
@@ -666,6 +667,21 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; font-varian
   .on-vs { grid-template-columns: minmax(0, 1fr); } .on-vs-v { justify-self: center; }
   .on-code { font-size: 40px; letter-spacing: 8px; }
 }
+
+.pause-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* pregame on a phone held sideways: smaller fighters so the whole matchup fits on one screen */
+@media (max-height: 520px) and (min-width: 600px) {
+  .vs-side > img { width: 62px; }
+  .vs-side { gap: 2px; }
+  .vs-side .bign { font-size: 20px; }
+  .vs-mid .vs { font-size: 28px; }
+  .versus { gap: 10px; }
+}
+@media (max-width: 760px) and (min-height: 521px) { .vs-side > img { width: 110px; } }
+.set-grid { align-items: start; }
+.set-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.nw { white-space: nowrap; }
 </style>
 <div id="app">
 <section class="screen" id="title" hidden></section>
@@ -825,7 +841,7 @@ const DIFF_NAMES = ['ROOKIE', 'PRO', 'ALL-STAR', 'LEGEND'];
 let S = null; // global save state
 RH.getS = () => S;
 
-const defaultSettings = () => ({ sound: true, music: true, volume: 0.7, qlen: 3, difficulty: 1, controls: 'auto', seasonGames: 15, bestOf: 1, showMeter: true });
+const defaultSettings = () => ({ sound: true, music: true, announcer: true, crowd: true, volume: 0.7, qlen: 3, difficulty: 1, controls: 'auto', seasonGames: 15, bestOf: 1, showMeter: true });
 
 /* ---------- rating scale ----------
    Ratings are stored and shown on a 2K-style scale (stars in the 90s, starters in the 80s, bench in the 70s).
@@ -2280,6 +2296,7 @@ const SFX = (() => {
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     } catch (e) { ctx = null; }
     if (ctx && wantTrack) music(wantTrack);
+    if (ctx && crowdWant) startCrowd();
   }
   function setEnabled(on) { enabled = on; if (master) master.gain.value = on ? vol : 0; }
   function setVolume(v) { vol = v; if (master && enabled) master.gain.value = v; }
@@ -2386,9 +2403,9 @@ const SFX = (() => {
       }
     };
   }
-  let musicGain = null, synth = null, curTrack = null, wantTrack = null, musicOn = true, mStep = 0, mNext = 0, mTimer = null, mInt = 0, mDuck = 1;
+  let musicGain = null, synth = null, curTrack = null, wantTrack = null, musicOn = true, mStep = 0, mNext = 0, mTimer = null, mInt = 0, mDuck = 1, vDuck = 1;
   const MUSIC_LVL = 0.75;
-  function musicLevel() { return musicOn ? MUSIC_LVL * mDuck : 0; }
+  function musicLevel() { return musicOn ? MUSIC_LVL * mDuck * vDuck : 0; }
   function ensureMusic() {
     if (!ctx || musicGain) return;
     musicGain = ctx.createGain(); musicGain.gain.value = 0; musicGain.connect(master);
@@ -2413,10 +2430,176 @@ const SFX = (() => {
   }
   function setMusic(on) { musicOn = on; if (musicGain && ctx) musicGain.gain.setTargetAtTime(musicLevel(), ctx.currentTime, 0.1); }
   function musicDuck(on) { mDuck = on ? 0.4 : 1; if (musicGain && ctx) musicGain.gain.setTargetAtTime(musicLevel(), ctx.currentTime, 0.15); }
-  // the old crowd-noise loop is gone; the game music picks up energy with the crowd instead
-  function startCrowd() { }
-  function stopCrowd() { }
-  function crowdLevel(v) { if (!quiet) mInt = v; }
+  /* ---------- the crowd ----------
+     A bed of arena chatter (many synthetic voices babbling vowels, rendered once and looped), a roar that rises with
+     the excitement, and reactions built the same way: choruses of voices through vowel filters (ooh, aww, boo, yeah,
+     the DE-FENSE chant), "woo" whistles, and a looped applause texture. All of it is the home crowd. */
+  let crowdBus = null, crowdOn = true, bedSrc = null, bedGain = null, roarGain = null, crowdTex = null, texBusy = false, crowdWant = false, crowdLive = true, cLvl = 0.2;
+  const VOW = { i: [[290, 7], [2250, 10]], e: [[520, 6], [1820, 9]], a: [[740, 5], [1150, 7]], o: [[520, 6], [860, 8]], u: [[320, 7], [800, 9]], ai: [[660, 6], [1700, 8]] };
+  async function makeTextures() {
+    if (texBusy || crowdTex) return; texBusy = true;
+    try {
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext, sr = 22050;
+      // arena chatter: 26 voices, each a buzz through two moving vowel filters, talking in short phrases
+      const secs = 6, oc = new OAC(1, sr * (secs + 1), sr);
+      const out = oc.createBiquadFilter(); out.type = 'lowpass'; out.frequency.value = 2400; out.connect(oc.destination);
+      const vl = Object.values(VOW).concat([[[430, 6], [1020, 8]], [[600, 6], [1300, 8]]]);
+      for (let v = 0; v < 26; v++) {
+        const f0 = 95 + Math.random() * 150, o = oc.createOscillator(), g = oc.createGain(), b1 = oc.createBiquadFilter(), b2 = oc.createBiquadFilter(), m2 = oc.createGain();
+        o.type = 'sawtooth'; o.frequency.value = f0; g.gain.value = 0; b1.type = b2.type = 'bandpass'; b1.Q.value = 5; b2.Q.value = 8; m2.gain.value = 0.55;
+        o.connect(b1); o.connect(b2); b1.connect(g); b2.connect(m2); m2.connect(g); g.connect(out);
+        let t = Math.random() * 0.5; const amp = 0.04 + Math.random() * 0.05;
+        while (t < secs + 1) {
+          for (let k = 0, n = 2 + Math.floor(Math.random() * 6); k < n && t < secs + 1; k++) {
+            const [F1, F2] = vl[Math.floor(Math.random() * vl.length)], d = 0.08 + Math.random() * 0.17;
+            b1.frequency.setTargetAtTime(F1[0], t, 0.02); b2.frequency.setTargetAtTime(F2[0], t, 0.02);
+            o.frequency.setTargetAtTime(f0 * (0.88 + Math.random() * 0.3), t, 0.05);
+            g.gain.setTargetAtTime(amp, t, 0.012); g.gain.setTargetAtTime(amp * 0.2, t + d * 0.7, 0.025);
+            t += d;
+          }
+          g.gain.setTargetAtTime(0, t, 0.04); t += 0.12 + Math.random() * 0.7;
+        }
+        o.start(0); o.stop(secs + 1);
+      }
+      const nb = oc.createBuffer(1, sr * (secs + 1), sr), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const ns = oc.createBufferSource(), nf = oc.createBiquadFilter(), ng = oc.createGain(); ns.buffer = nb; nf.type = 'bandpass'; nf.frequency.value = 800; nf.Q.value = 0.6; ng.gain.value = 0.06;
+      ns.connect(nf); nf.connect(ng); ng.connect(out); ns.start(0);
+      const babble = loopify(await oc.startRendering(), sr, secs);
+      // applause: thousands of tiny hand claps
+      const as = 3, oa = new OAC(1, sr * (as + 1), sr), ab = oa.createBuffer(1, sr * (as + 1), sr), ad = ab.getChannelData(0);
+      for (let c = 0; c < (as + 1) * 260; c++) {
+        const at = Math.floor(Math.random() * (ad.length - 900)), len = 120 + Math.floor(Math.random() * 260), a = 0.25 + Math.random() * 0.75;
+        for (let i = 0; i < len; i++) ad[at + i] += (Math.random() * 2 - 1) * a * Math.exp(-i / (len * 0.28));
+      }
+      const asrc = oa.createBufferSource(), af = oa.createBiquadFilter(), ah = oa.createBiquadFilter(); asrc.buffer = ab; af.type = 'bandpass'; af.frequency.value = 1500; af.Q.value = 0.5; ah.type = 'highshelf'; ah.frequency.value = 3500; ah.gain.value = -6;
+      asrc.connect(af); af.connect(ah); ah.connect(oa.destination); asrc.start(0);
+      const applause = loopify(await oa.startRendering(), sr, as);
+      crowdTex = { babble, applause };
+      if (crowdWant) startBed();
+    } catch (e) { crowdTex = null; }
+    texBusy = false;
+  }
+  // seamless loop: cross-fade the spare second onto the start, then normalise to unit RMS
+  function loopify(buf, sr, secs) {
+    const x = buf.getChannelData(0), L = sr * secs, F = sr, res = ctx ? ctx.createBuffer(1, L, sr) : new AudioBuffer({ length: L, sampleRate: sr, numberOfChannels: 1 }), y = res.getChannelData(0);
+    for (let i = 0; i < L; i++) y[i] = x[i];
+    for (let i = 0; i < F; i++) { const a = i / F; y[i] = x[i] * a + x[L + i] * (1 - a); }
+    let ss = 0; for (let i = 0; i < L; i++) ss += y[i] * y[i]; const k = 1 / Math.max(1e-6, Math.sqrt(ss / L));
+    for (let i = 0; i < L; i++) y[i] *= k;
+    return res;
+  }
+  function ensureCrowd() {
+    if (!ctx || crowdBus) return;
+    crowdBus = ctx.createGain(); crowdBus.gain.value = crowdOn ? 1 : 0; crowdBus.connect(master);
+    makeTextures();
+  }
+  function bedLevels() { // chatter grows a little with the excitement, the roar a lot
+    const live = crowdWant && crowdLive && !quiet;
+    return { bed: live ? 0.022 + cLvl * 0.03 : 0, roar: live ? 0.004 + cLvl * cLvl * 0.07 : 0 };
+  }
+  function startBed() {
+    if (!ctx || !crowdTex || bedSrc) return;
+    bedSrc = ctx.createBufferSource(); bedSrc.buffer = crowdTex.babble; bedSrc.loop = true;
+    bedGain = ctx.createGain(); bedGain.gain.value = 0;
+    bedSrc.connect(bedGain); bedGain.connect(crowdBus); bedSrc.start(0, Math.random() * 5);
+    const r = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(); r.buffer = noiseBuf; r.loop = true;
+    bp.type = 'bandpass'; bp.frequency.value = 650; bp.Q.value = 0.7; lp.type = 'lowpass'; lp.frequency.value = 2200;
+    roarGain = ctx.createGain(); roarGain.gain.value = 0; r.connect(bp); bp.connect(lp); lp.connect(roarGain); roarGain.connect(crowdBus); r.start(0, Math.random());
+    bedSrc._roar = r; applyBed(0.8);
+  }
+  function applyBed(tc = 0.35) {
+    if (!bedGain || !ctx) return; const L = bedLevels(), t = ctx.currentTime;
+    bedGain.gain.setTargetAtTime(L.bed, t, tc); roarGain.gain.setTargetAtTime(L.roar, t, tc);
+  }
+  function startCrowd() { crowdWant = true; if (!ctx) return; ensureCrowd(); if (crowdTex) { startBed(); applyBed(0.8); } }
+  function stopCrowd() { crowdWant = false; applyBed(0.6); }
+  function crowdLevel(v) { if (!quiet) mInt = v; cLvl = Math.max(0, Math.min(1, v)); applyBed(0.4); }
+  function setCrowdLive(on) { if (on === crowdLive) return; crowdLive = on; applyBed(0.25); }
+  function setCrowd(on) { crowdOn = on; if (crowdBus && ctx) crowdBus.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.1); }
+  function canCrowd() { return ctx && enabled && !quiet && crowdOn && crowdWant && crowdLive && (ensureCrowd(), crowdBus); }
+  // a chorus of n voices singing one vowel (or a sequence of vowels) with a pitch shape; returns nothing
+  function chorus(n, lo, hi, vowels, dur, vol, o = {}) {
+    if (!canCrowd()) return;
+    const t0 = ctx.currentTime + (o.delay || 0), env = ctx.createGain(), mix = ctx.createGain(); mix.gain.value = 1 / Math.sqrt(n);
+    env.gain.setValueAtTime(0.0001, t0); env.gain.linearRampToValueAtTime(vol, t0 + (o.a || 0.08)); env.gain.setTargetAtTime(0.0001, t0 + dur * (o.hold || 0.6), dur * 0.22);
+    const fs = (vowels[0] || VOW.a).map(([f, q]) => { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; mix.connect(b); b.connect(env); return b; });
+    vowels.forEach((vw, k) => { if (!k) return; const at = t0 + dur * k / vowels.length; vw.forEach(([f], j) => fs[j] && fs[j].frequency.setTargetAtTime(f, at, 0.03)); });
+    if (fs[1]) { const g2 = ctx.createGain(); g2.gain.value = 0.6; fs[1].disconnect(); fs[1].connect(g2); g2.connect(env); }
+    env.connect(crowdBus);
+    const shape = o.shape || [1, 1];
+    for (let i = 0; i < n; i++) {
+      const os = ctx.createOscillator(), f0 = lo + Math.random() * (hi - lo), st = t0 + Math.random() * (o.spread ?? 0.12);
+      os.type = 'sawtooth'; os.frequency.setValueAtTime(f0 * shape[0], st);
+      shape.forEach((m, k) => { if (k) os.frequency.linearRampToValueAtTime(f0 * m, st + dur * k / (shape.length - 1)); });
+      const vib = ctx.createOscillator(), vg = ctx.createGain(); vib.frequency.value = 4 + Math.random() * 3; vg.gain.value = f0 * 0.018; vib.connect(vg); vg.connect(os.frequency);
+      os.connect(mix); os.start(st); os.stop(t0 + dur * 1.9 + 0.3); vib.start(st); vib.stop(t0 + dur * 1.9 + 0.3);
+    }
+    if (o.breath !== 0) { const s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = noiseBuf; g.gain.value = 0.25 * (o.breath || 1); s.connect(g); g.connect(mix); s.start(t0, Math.random()); s.stop(t0 + dur * 1.9 + 0.3); }
+  }
+  function whistles(n, vol, spread = 0.7) { // fans going "woooo!"
+    if (!canCrowd()) return;
+    for (let i = 0; i < n; i++) {
+      const t = ctx.currentTime + Math.random() * spread, f = 650 + Math.random() * 500, d = 0.45 + Math.random() * 0.5, o = ctx.createOscillator(), g = ctx.createGain(), l = ctx.createOscillator(), lg = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(f * 0.8, t); o.frequency.linearRampToValueAtTime(f * (1.35 + Math.random() * 0.4), t + d * 0.35); o.frequency.linearRampToValueAtTime(f * 0.9, t + d);
+      l.frequency.value = 6 + Math.random() * 3; lg.gain.value = f * 0.025; l.connect(lg); lg.connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol * (0.5 + Math.random() * 0.5), t + 0.06); g.gain.setTargetAtTime(0.0001, t + d * 0.75, 0.06);
+      o.connect(g); g.connect(crowdBus); o.start(t); o.stop(t + d + 0.3); l.start(t); l.stop(t + d + 0.3);
+    }
+  }
+  function applause(k = 1, dur = 2.2, delay = 0) {
+    if (!canCrowd() || !crowdTex) return;
+    const t = ctx.currentTime + delay, s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = crowdTex.applause; s.loop = true;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.045 * k, t + 0.12); g.gain.setTargetAtTime(0.0001, t + dur * 0.45, dur * 0.25);
+    s.connect(g); g.connect(crowdBus); s.start(t, Math.random() * 2.5); s.stop(t + dur * 1.6 + 0.2);
+  }
+  function roarSwell(k, dur) { // the whole building at once
+    if (!canCrowd()) return;
+    const t = ctx.currentTime, s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = noiseBuf; s.loop = true; bp.type = 'bandpass'; bp.frequency.setValueAtTime(600, t); bp.frequency.linearRampToValueAtTime(900, t + 0.3); bp.Q.value = 0.55; lp.type = 'lowpass'; lp.frequency.value = 2600;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.24 * k, t + 0.14); g.gain.setTargetAtTime(0.0001, t + 0.35, dur * 0.35);
+    s.connect(bp); bp.connect(lp); lp.connect(g); g.connect(crowdBus); s.start(t, Math.random()); s.stop(t + dur * 1.5 + 0.3);
+  }
+  // big reactions (k ~ 0.4 polite .. 1.6 the roof comes off)
+  function cheer(k = 1) {
+    roarSwell(k, 1.2 + k);
+    chorus(Math.round(8 + 8 * Math.min(1.5, k)), 150, 340, [VOW.e, VOW.a, VOW.a], 0.9 + k * 0.5, 0.32 * k, { shape: [1, 1.12, 0.95], spread: 0.15, hold: 0.5 });
+    whistles(Math.round(1 + 4 * k), 0.022 * Math.min(1.3, k));
+    applause(0.6 * k, 1.6 + k, 0.35);
+  }
+  function ooh(k = 1) { chorus(16, 140, 300, [VOW.u, VOW.u], 1.0, 0.3 * k, { shape: [0.95, 1.25, 1.05], a: 0.12, hold: 0.55 }); }
+  function aww(k = 1) { chorus(16, 150, 300, [VOW.a, VOW.o], 1.1, 0.36 * k, { shape: [1.15, 1.0, 0.72], a: 0.06, hold: 0.5 }); }
+  function boo(k = 1) { chorus(18, 95, 170, [VOW.u, VOW.u], 1.7, 0.42 * k, { shape: [1, 0.97, 0.94], a: 0.18, hold: 0.7, spread: 0.3 }); }
+  function hoot() { boo(0.55); whistles(4, 0.02, 1.0); }  // waving the noodles behind the basket during a road free throw
+  // stomp-stomp-clap and a sung chant, three times through
+  function chant(kind = 'defense') {
+    if (!canCrowd()) return;
+    const syl = kind === 'airball' ? [[VOW.e, 1.12, 0], [VOW.o, 0.92, 0.42]] : [[VOW.i, 1.12, 0], [VOW.e, 0.95, 0.4]], reps = kind === 'airball' ? 2 : 3, per = kind === 'airball' ? 1.0 : 1.55;
+    for (let r = 0; r < reps; r++) {
+      const base = r * per;
+      for (const [vw, m, off] of syl) chorus(14, 130, 250, [vw], 0.3, kind === 'airball' ? 0.45 : 0.42, { delay: base + off, shape: [m, m * 0.98], a: 0.03, hold: 0.55, spread: 0.06, breath: 0.6 });
+      if (kind !== 'airball') { // the "s" on the end of FENSE, then the stomps
+        noise(0.14, 0.03, 5200, 0.8, 'highpass', base + 0.62);
+        for (const at of [0.95, 1.2]) { tone(70, 0.14, 'sine', 0.18, -30, base + at); noise(0.05, 0.05, 1600, 0.9, 'bandpass', base + at); }
+      }
+    }
+  }
+  function voiceDuck(on) { // the music and crowd sit back while the announcer talks
+    vDuck = on ? 0.55 : 1; if (musicGain && ctx) musicGain.gain.setTargetAtTime(musicLevel(), ctx.currentTime, 0.08);
+    if (crowdBus && ctx) crowdBus.gain.setTargetAtTime(crowdOn ? (on ? 0.7 : 1) : 0, ctx.currentTime, 0.08);
+  }
+  // offline render of crowd sounds, used by tests to check levels
+  async function renderFx(secs, fn) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext, sr = 22050, oc = new OAC(1, Math.ceil(sr * secs), sr);
+    if (!crowdTex) { init(); await makeTextures(); }
+    const keep = { ctx, master, crowdBus, noiseBuf, enabled, quiet, crowdWant, crowdLive, crowdOn, bedSrc, bedGain, roarGain };
+    ctx = oc; master = oc.createGain(); master.gain.value = 1; master.connect(oc.destination); crowdBus = oc.createGain(); crowdBus.connect(master);
+    enabled = true; quiet = false; crowdWant = crowdLive = crowdOn = true; bedSrc = bedGain = roarGain = null;
+    const nb = oc.createBuffer(1, sr * 2, sr), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; noiseBuf = nb;
+    try { fn(); } finally { ({ ctx, master, crowdBus, noiseBuf, enabled, quiet, crowdWant, crowdLive, crowdOn, bedSrc, bedGain, roarGain } = keep); }
+    const buf = await oc.startRendering(), x = buf.getChannelData(0); let peak = 0, ss = 0; for (const v of x) { peak = Math.max(peak, Math.abs(v)); ss += v * v; }
+    const win = Math.round(sr * 0.25), env = []; for (let i = 0; i + win <= x.length; i += win) { let e = 0; for (let j = i; j < i + win; j++) e += x[j] * x[j]; env.push(Math.round(Math.sqrt(e / win) * 1000) / 1000); }
+    return { peak, rms: Math.sqrt(ss / x.length), env, nan: x.some(v => !isFinite(v)) };
+  }
   // offline render, used by tests to check levels
   async function renderOffline(track, secs, wav) {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext, sr = 22050, oc = new OAC(1, Math.ceil(sr * secs), sr);
@@ -2436,7 +2619,9 @@ const SFX = (() => {
     return res;
   }
   return {
-    init, setEnabled, setVolume, startCrowd, stopCrowd, crowdLevel, music, setMusic, musicDuck, renderOffline,
+    init, setEnabled, setVolume, startCrowd, stopCrowd, crowdLevel, setCrowdLive, setCrowd, voiceDuck, music, setMusic, musicDuck, renderOffline, renderFx,
+    cheer, ooh, aww, boo, hoot, chant, applause: (k, d) => applause(k, d),
+    get volume() { return enabled ? vol : 0; },
     get on() { return enabled; },
     setQuiet(q) { quiet = q; if (q) mInt = 0; },
     click: () => tone(660, 0.05, 'square', 0.08),
@@ -2455,8 +2640,6 @@ const SFX = (() => {
     buzzer: () => { tone(220, 0.9, 'sawtooth', 0.14); tone(223, 0.9, 'square', 0.08); },
     steal: () => { tone(330, 0.06, 'square', 0.1); tone(660, 0.1, 'square', 0.1, 0, 0.05); },
     block: () => { noise(0.12, 0.25, 300, 1, 'lowpass'); tone(90, 0.15, 'square', 0.15, -40); },
-    cheer: (k = 1) => { noise(1.0 * k, 0.09 * k, 650, 0.7, 'lowpass'); noise(0.7 * k, 0.03 * k, 1300, 0.8, 'bandpass', 0.08); },
-    ooh: () => { tone(300, 0.5, 'sine', 0.05, -120); noise(0.6, 0.05, 500, 0.6); },
     charge: (d = 0.6) => { tone(260, d, 'square', 0.035, 620); tone(390, d, 'triangle', 0.03, 900); },
     perfect: () => { [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.09, 'square', 0.07, 0, i * 0.045)); noise(0.18, 0.06, 6000, 1, 'highpass', 0.05); },
     good: () => { tone(880, 0.08, 'square', 0.07); tone(1175, 0.1, 'square', 0.06, 0, 0.06); },
@@ -2470,6 +2653,114 @@ const SFX = (() => {
   };
 })();
 RH.SFX = SFX;
+
+'use strict';
+/* ============ RETRO HOOPS — the broadcast booth ============
+   Two voices from the browser's own speech engine: a play-by-play caller and a color analyst.
+   Lines have a priority; a bigger moment cuts off a smaller one, small talk never talks over anything,
+   and a few lines (a stat, a lead change) may queue up behind the call they follow. */
+const VOICE = (() => {
+  const ss = typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null;
+  let on = true, vol = 0.8, pbp = null, color = null, primed = false, curPrio = 0, queued = 0, picked = false;
+  const NOVELTY = /bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|hysterical|deranged|grandma|grandpa|junior|ralph|kathy|princess|eddy|flo\b|reed|rocko|sandy|shelley/i;
+  const MALE = /\b(male|guy|daniel|alex|david|mark|aaron|arthur|tom|matthew|james|ryan|christopher|eric|roger|andrew|brian|davis|tony|jason|oliver|thomas|george|rishi|lee|evan|nathan)\b/i;
+  const FEMALE = /(female|samantha|victoria|zira|karen|moira|tessa|susan|hazel|aria|jenny|emma|ava|allison|serena|fiona|catherine|libby|sonia|michelle|kate|nicky|zoe|joanna|salli|kimberly|ivy)/i;
+  function score(v) {
+    let s = 0; const n = v.name || '';
+    if (/en[-_]US/i.test(v.lang)) s += 3; else if (/en[-_]GB/i.test(v.lang)) s += 2; else if (/^en/i.test(v.lang)) s += 1;
+    if (/natural|neural|online|premium|enhanced/i.test(n)) s += 3; else if (/google/i.test(n)) s += 2;
+    if (MALE.test(n)) s += 3; if (FEMALE.test(n)) s -= 1;
+    return s;
+  }
+  function pickVoices() {
+    if (!ss) return; const vs = ss.getVoices().filter(v => /^en/i.test(v.lang) && !NOVELTY.test(v.name));
+    if (!vs.length) return; picked = true;
+    const ranked = vs.slice().sort((a, b) => score(b) - score(a));
+    pbp = ranked[0];
+    // the analyst: a different voice, ideally another man from a different region so the two are easy to tell apart
+    color = ranked.find(v => v !== pbp && MALE.test(v.name) && v.lang !== pbp.lang) || ranked.find(v => v !== pbp && MALE.test(v.name)) || ranked.find(v => v !== pbp) || pbp;
+  }
+  if (ss) { pickVoices(); try { ss.addEventListener('voiceschanged', pickVoices); } catch (e) { ss.onvoiceschanged = pickVoices; } }
+  // iOS only lets a page talk after the first tap: say nothing, quietly, during that tap
+  function prime() { if (primed || !ss) return; primed = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; ss.speak(u); } catch (e) { } }
+  let gen = 0, holdUntil = 0;
+  function say(text, o = {}) {
+    if (!ss || !on || vol < 0.02 || !text) return false;
+    if (!picked) pickVoices();
+    const prio = o.prio || 1, busy = ss.speaking || ss.pending || performance.now() < holdUntil;
+    let delay = 0;
+    if (busy) {
+      if (o.chain && queued < 1) queued++;                                     // follows the current call
+      else if (prio > curPrio) { gen++; ss.cancel(); queued = 0; delay = 70; }  // a bigger moment cuts in (a beat after the cancel, or Safari drops it)
+      else return false;                                                       // nothing new is worth talking over this
+    }
+    const u = new SpeechSynthesisUtterance(text), v = o.color ? color : pbp, g = gen;
+    if (v) u.voice = v;
+    u.lang = (v && v.lang) || 'en-US';
+    u.rate = o.rate || (o.color ? 1.02 : 1.12); u.pitch = o.pitch ?? (o.color ? (color === pbp ? 0.8 : 0.95) : 1.05); u.volume = vol;
+    // a cut-off line reports its end late: only the current generation may touch the state
+    u.onstart = () => { if (g !== gen) return; curPrio = prio; if (RH.SFX) RH.SFX.voiceDuck(true); };
+    u.onend = u.onerror = () => { if (g !== gen) return; if (queued > 0) queued--; else { curPrio = 0; if (RH.SFX) RH.SFX.voiceDuck(false); } };
+    if (!busy || delay) curPrio = prio;
+    const go = () => { if (g !== gen) return; try { ss.speak(u); } catch (e) { } };
+    if (delay) { holdUntil = performance.now() + delay + 30; setTimeout(go, delay); } else go();
+    return true;
+  }
+  function stop() { if (!ss) return; gen++; queued = 0; curPrio = 0; holdUntil = 0; try { ss.cancel(); } catch (e) { } if (RH.SFX) RH.SFX.voiceDuck(false); }
+  return {
+    say, stop, prime,
+    setOn(b) { on = !!b; if (!on) stop(); },
+    setVolume(v) { vol = Math.max(0, Math.min(1, v)); },
+    get available() { return !!ss; },
+    get voices() { return { pbp: pbp && pbp.name, color: color && color.name }; }
+  };
+})();
+
+/* ---------- what they say ----------
+   {name} the player's last name, {team} the team's nickname, {city}, {n} a number, {pts} points, {qth} "first".
+   prio: 1 small talk .. 5 game winner. p: chance to say it at all. cd: seconds before this kind can come up again.
+   color: the analyst says it. chain: may queue behind the call before it. */
+const BOOTH = {
+  intro: { prio: 2, lines: ['Good evening, and welcome to {homeCity}! The {away} visit the {home} tonight.', 'Welcome in to {homeCity}, where the {home} host the {away}. Should be a good one.', "It's the {away} and the {home} tonight. Let's get it on!"] },
+  tip: { prio: 2, lines: ["And we're underway!", 'Tip-off, here we go!', 'The {team} win the tip.'] },
+  green: { prio: 4, rate: 0.68, pitch: 1.08, lines: ['Greeeeeen!', 'Greeeeeen!', 'Greeeeeen!', 'Greeeeeen light!'] },
+  greenFT: { prio: 2, p: 0.6, rate: 0.72, pitch: 1.08, lines: ['Greeeeeen!'] },
+  three: { prio: 3, chain: 1, lines: ['Three ball!', 'From downtown!', 'Bang!', 'Splash!', '{name}, from deep!', 'Count it, three!', 'Nothing but net, from three!', 'Wet!', '{name}, for three... got it!'] },
+  deep: { prio: 3, chain: 1, lines: ['From the parking lot!', 'Way downtown!', 'Are you kidding me? From way out!', 'From the logo!', '{name}, from another zip code!'] },
+  dunk: { prio: 3, chain: 1, p: 0.85, lines: ['Slam dunk!', 'Throws it down!', '{name}, with authority!', 'Oh, he hammered it home!', 'Boom! Big flush!', 'Jam!', '{name} rocks the rim!', 'Tomahawk!', '{name}, two hands!', 'Posterized!', 'He threw that one down!', 'Rim-rattler!'] },
+  alley: { prio: 4, chain: 1, lines: ['Alley-oop!', 'The lob, and the slam!', 'Oop! What a connection!', 'Up top... and down!'] },
+  layup: { prio: 1, p: 0.4, lines: ['Easy two.', 'Off the glass.', '{name} lays it in.', 'Finishes at the rim.', 'Gets the roll.', 'Kiss off the glass.'] },
+  jumper: { prio: 1, p: 0.45, lines: ['{name}, pull-up... good.', 'Money.', 'Nothing but net.', 'Jumper is good.', '{name} knocks it down.', 'Cash.'] },
+  andOne: { prio: 3, chain: 1, lines: ['And one!', 'And the foul!', 'Plus the foul! Count it!'] },
+  block: { prio: 3, lines: ['Rejected!', 'Get that out of here!', 'Denied, by {name}!', 'Swatted!', 'Sent back!', '{name} says no!'] },
+  steal: { prio: 2, lines: ['Picked off!', '{name}, with the steal!', 'Stolen!', 'Pick-pocket!', 'Swiped, by {name}!'] },
+  ankles: { prio: 3, lines: ['Oh, he broke his ankles!', "He's on the floor!", 'Shook him!', 'Crossover, and down he goes!'] },
+  heating: { prio: 2, chain: 1, p: 0.45, cd: 25, lines: ['{name} is heating up!', '{name} is feeling it!'] },
+  fire: { prio: 3, chain: 1, lines: ['{name} is on fire!', '{name} can not miss!', 'Somebody call the fire department!'] },
+  cooled: { prio: 1, p: 0.5, color: 1, chain: 1, lines: ['That cools him off.', 'The streak is over.'] },
+  airball: { prio: 2, lines: ['Airball!', 'Oh, airball.', 'All air.', 'Nothing but air.'] },
+  miss: { prio: 1, p: 0.1, cd: 15, lines: ['No good.', 'Off the iron.', 'Rims out.', "Won't go.", 'Off the mark.', 'In and out!'] },
+  buzzer: { prio: 4, chain: 1, lines: ['At the buzzer... got it!', 'Beats the buzzer!', 'Buzzer beater!'] },
+  winner: { prio: 5, chain: 1, lines: ['{name}, for the win... Bang!', '{name} wins it!', 'Game winner! {name}!'] },
+  shotclock: { prio: 2, lines: ['Shot clock violation.', 'Shot clock expires.', "Couldn't get a shot off in time."] },
+  turnover: { prio: 1, p: 0.4, cd: 8, lines: ['Turnover.', 'Out of bounds.', 'Careless with the ball.', 'Gives it away.'] },
+  foul: { prio: 1, p: 0.5, cd: 6, lines: ['Whistle. Foul on {name}.', 'Foul on {name}.', 'Reach-in, {name}.', "That's a foul on {name}."] },
+  bonus: { prio: 1, color: 1, chain: 1, cd: 60, lines: ['The {team} are in the penalty.', 'And that puts them in the bonus.'] },
+  qend: { prio: 3, lines: ["That'll do it for the {qth} quarter.", 'End of the {qth}.', 'And that is the end of the {qth} quarter.'] },
+  half: { prio: 3, lines: ["That's halftime. {lead}", 'Halftime here. {lead}', 'We go to the break. {lead}'] },
+  ot: { prio: 3, lines: ["We're going to overtime!", 'Tied at the end of regulation! Free basketball!'] },
+  final: { prio: 3, chain: 1, lines: ["That's the ballgame! The {team} win it, {ws} to {ls}.", 'Final buzzer! The {team} take it, {ws} to {ls}.', 'And that is a wrap. {team} win, {ws} to {ls}.'] },
+  clutch: { prio: 2, color: 1, lines: ['Under thirty seconds, and this one is tight.', 'Crunch time. Somebody has to make a play.', 'This is where stars are made.'] },
+  tie: { prio: 1, color: 1, chain: 1, p: 0.6, cd: 20, lines: ["We're all tied up.", 'Back to even.', 'And this game is tied.'] },
+  lead: { prio: 1, color: 1, chain: 1, p: 0.5, cd: 20, lines: ['The {team} take the lead.', 'And that puts the {team} in front.', 'New lead for the {team}.'] },
+  run: { prio: 2, color: 1, chain: 1, cd: 25, lines: ["That's {an} {n} to nothing run for the {team}.", 'The {team} on {an} {n} to nothing run. Somebody needs a stop.', '{n} straight points for the {team}.'] },
+  hot: { prio: 1, color: 1, chain: 1, cd: 30, lines: ['{name} has {pts} points already.', "That's {pts} for {name} tonight.", '{name} is up to {pts}.', '{pts} for {name}. You can not leave him open.'] },
+  sub: { prio: 1, color: 1, p: 0.3, cd: 40, lines: ['Fresh legs coming in.', '{name} checks in.', 'Here comes {name} off the bench.'] },
+  crowd: { prio: 1, color: 1, cd: 90, lines: ['Listen to this crowd!', 'The building is shaking!', 'This place is rocking!'] },
+  defense: { prio: 1, color: 1, cd: 120, p: 0.5, lines: ['The crowd wants a stop.', 'They need a stop here.'] },
+  stat: { prio: 1, color: 1, chain: 1, cd: 30, lines: ['{text}'] }   // the analyst's numbers, built from the box score in the match
+};
+Object.assign(RH, { VOICE, BOOTH });
 
 'use strict';
 /* ============ RETRO HOOPS — on-court gameplay engine ============ */
@@ -2532,7 +2823,8 @@ class Match {
     this.lastPass = null; this.ft = null; this.paused = false; this.over = false; this.meterFx = null; this.sparks = [];
     this.periodScores = [];
     this.banner('TIP-OFF', `${o.away.abbr} AT ${o.home.abbr}`, 1.6, PAL.orange);
-    SFX.startCrowd();
+    this.booth = { last: -99, at: {}, said: {} }; this.run = { ti: null, n: 0, said: 0 }; this.chantT = -99;
+    if (!o.attract) { SFX.startCrowd(); this.call('intro'); }
   }
   /* ---------- setup ---------- */
   mkTeam(t, side) {
@@ -2601,6 +2893,62 @@ class Match {
     this.popups.push({ text, x, y, z: z + 9 + near * 4.5 + byMeter, t: 0, life: wave ? 1.4 : 1.2, color, big, wave });
   }
   log(msg) { this.feed.unshift({ msg, t: 0 }); this.feed = this.feed.slice(0, 3); }
+  /* ---------- the broadcast booth: picks a line for what just happened (lines live in voice.js) ---------- */
+  call(kind, c = {}) {
+    if (this.o.attract || this.netGuest || !RH.BOOTH) return false;
+    const L = RH.BOOTH[kind]; if (!L) return false;
+    const b = this.booth, now = this.time;
+    if (L.p != null && !chance(L.p)) return false;
+    if (now - (b.at[kind] ?? -99) < (L.cd || 0)) return false;
+    if (L.prio <= 1 && !L.chain && now - b.last < 4) return false; // small talk waits for a quiet moment
+    const sp = c.sp, tm = c.ti != null ? this.T[c.ti].t : sp ? this.T[sp.ti].t : null;
+    const recent = b.said[kind] || (b.said[kind] = []);
+    let opts = L.lines.filter(l => sp || !/\{name\}/.test(l)); const fresh = opts.filter(l => !recent.includes(l)); if (fresh.length) opts = fresh;
+    if (!opts.length) return false;
+    const line = pick(opts); recent.push(line); if (recent.length > Math.min(3, L.lines.length - 1)) recent.shift(); b.at[kind] = now; b.last = now;
+    const text = line.replace(/\{(\w+)\}/g, (_, k) => k === 'name' ? (sp ? sp.p.last : '') : k === 'team' ? (tm ? tm.name : '') : k === 'city' ? (tm ? tm.city : '')
+      : k === 'an' ? (/^(8|11|18|8\d)$/.test(String(c.n)) ? 'an' : 'a') : k === 'home' ? this.T[0].t.name : k === 'away' ? this.T[1].t.name : k === 'homeCity' ? this.T[0].t.city : c[k] != null ? String(c[k]) : '');
+    this.say(text, L.prio, L.color ? 1 : 0, L.rate || 0, L.pitch || 0, L.chain ? 1 : 0);
+    return true;
+  }
+  say(text, prio = 1, color = 0, rate = 0, pitch = 0, chain = 0) { // (an online guest hears the host's lines through this)
+    if (this.o.attract || !RH.VOICE) return;
+    RH.VOICE.say(text, { prio, color: !!color, rate: rate || undefined, pitch: pitch || undefined, chain: !!chain });
+  }
+  // the analyst at a dead ball: one fact from the box score, picked at random from the ones worth saying
+  colorTalk() {
+    if (this.o.attract || this.netGuest || this.time - (this.booth.at.stat ?? -99) < 30 || !chance(0.35)) return;
+    if (this.excite > 0.85 && this.call('crowd')) return;
+    const facts = [], B = id => this.box[id], nm = p => p.last, T = ti => this.T[ti].t.name;
+    for (const ti of [0, 1]) {
+      const all = this.T[ti].all, sum = k => all.reduce((a, sp) => a + (B(sp.p.id)[k] || 0), 0);
+      const top = all.slice().sort((a, b) => B(b.p.id).pts - B(a.p.id).pts)[0], tp = B(top.p.id);
+      const add = (key, text) => facts.push({ key, text });
+      if (tp.pts >= 8) add('top' + ti, `${nm(top.p)} leads the ${T(ti)} with ${tp.pts} points.`);
+      const tm = sum('tpm'), ta = sum('tpa'); if (ta >= 5) add('tp' + ti, tm / ta >= 0.4 ? `The ${T(ti)} are ${tm} of ${ta} from three. They are shooting it well.` : `The ${T(ti)} just ${tm} of ${ta} from deep tonight.`);
+      const to = sum('to'); if (to >= 6) add('to' + ti, `${to} turnovers now for the ${T(ti)}. They have to take care of the ball.`);
+      for (const sp of all) {
+        const x = B(sp.p.id), id = sp.p.id;
+        if (x.reb >= 6) add('reb' + id, `${nm(sp.p)} has ${x.reb} rebounds. He is cleaning the glass.`);
+        if (x.ast >= 4) add('ast' + id, `${x.ast} assists for ${nm(sp.p)}. He is finding the open man.`);
+        if (sp.pf >= 4 && sp.pf < 6) add('pf' + id + sp.pf, `${nm(sp.p)} has ${sp.pf} fouls. He has to be careful now.`);
+        if (x.blk >= 3) add('blk' + id, `${x.blk} blocks for ${nm(sp.p)}. He is protecting the rim.`);
+      }
+    }
+    const d = this.T[0].score - this.T[1].score; if (Math.abs(d) >= 12) { const lead = d > 0 ? 0 : 1; facts.push({ key: 'margin', text: `The ${T(lead)} up ${Math.abs(d)}. The ${T(1 - lead)} need a run here.` }); }
+    const seen = this.booth.facts || (this.booth.facts = {}), fresh = facts.filter(f => this.time - (seen[f.key] ?? -999) > 240); // each kind of fact at most every few minutes
+    if (!fresh.length) return;
+    const f = pick(fresh); if (this.call('stat', { text: f.text })) seen[f.key] = this.time;
+  }
+  // after any score: runs, lead changes and hot hands, for the analyst
+  scoreTalk(ti, pts, sp) {
+    const my = this.T[ti].score, their = this.T[this.opp(ti)].score, before = my - pts, r = this.run;
+    if (r.ti === ti) r.n += pts; else { r.ti = ti; r.n = pts; r.said = 0; }
+    if (r.n >= 8 && r.n - r.said >= (r.said ? 5 : 8)) { if (this.call('run', { ti, n: r.n })) r.said = r.n; }
+    if (my === their && my > 0) this.call('tie');
+    else if (my > their && before <= their) this.call('lead', { ti });
+    if (sp) { const p = this.box[sp.p.id].pts; for (const th of [10, 15, 20, 25, 30, 40]) if (p >= th && p - pts < th) { this.call('hot', { sp, pts: p }); break; } }
+  }
   confetti(colors, n = 80) { for (let i = 0; i < n; i++) this.parts.push({ x: rand(0, VW), y: rand(-60, 0), vx: rand(-20, 20), vy: rand(30, 80), c: pick(colors), life: rand(2.5, 4.5), t: 0, w: randi(1, 2) }); }
   stat(sp, k, n = 1) { this.box[sp.p.id][k] += n; }
 
@@ -2719,7 +3067,7 @@ class Match {
       df.face = sp.x > df.x ? 1 : -1;
       this.pop('ANKLES!', df.x, df.y, 9, PAL.orange, true, true);
       for (let i = 0; i < 12; i++) { const a = rand(Math.PI, Math.PI * 2); this.sparks.push({ x: RH.wx(df.x), y: RH.wy(df.y) - 2, vx: Math.cos(a) * rand(15, 45), vy: Math.sin(a) * rand(5, 25), t: 0, life: rand(0.3, 0.6), c: pick(['#e9dcc0', '#cdb894', '#fff6e0']), big: chance(0.4) }); }
-      SFX.ankles(); SFX.cheer(sp.ti === 0 ? 1 : 0.5); this.shake = 0.3; this.excite = Math.min(1, this.excite + 0.45); this.bigPlay(1.8, sp.x);
+      SFX.ankles(); if (sp.ti === 0) SFX.cheer(1.1); else SFX.ooh(1); this.call('ankles', { sp }); this.shake = 0.3; this.excite = Math.min(1, this.excite + 0.45); this.bigPlay(1.8, sp.x);
       this.log(`${RH.shortName(sp.p)} breaks ${RH.shortName(df.p)}'s ankles!`);
     } else if (s > 20) {
       df.shaken = mv.type === 'spin' ? 1.0 : 0.85; df.lunge = 0;
@@ -2793,7 +3141,11 @@ class Match {
   /* ---------- core rules ---------- */
   setPoss(ti, offReb) {
     if (this.poss !== ti) { this.shotClock = 24; for (const t of this.T) for (const o of t.on) { o.manOv = null; o.manOvT = 0; } } // new possession: back to normal matchups else if (offReb) this.shotClock = Math.max(this.shotClock, 14);
-    this.poss = ti; this.possT = this.time;
+    const newPoss = this.poss !== ti; this.poss = ti; this.possT = this.time;
+    if (newPoss && ti === 1 && !this.o.attract && this.time - this.chantT > 24) {
+      const p = this.clutch() ? 0.6 : this.q >= 4 ? 0.22 : this.q >= 3 ? 0.12 : 0.05;
+      if (chance(p * (0.6 + this.excite))) { this.chantT = this.time; SFX.chant('defense'); this.call('defense'); }
+    }
     if (this.userSide != null) this.forPads(() => {
       const h = this.holder();
       if (h && h.ti === this.userSide) this.ctrl = h;
@@ -2823,6 +3175,7 @@ class Match {
     this.give(holder); this.shotClock = sc; this.poss = ti;
     this.forPads(() => { if (this.userSide === ti) this.ctrl = holder; else if (this.userSide != null) { this.ctrl = this.T[this.userSide].on[holder.slot] || this.T[this.userSide].on[0]; } });
     this.state = 'dead'; this.deadT = delay; this.pendingAfter = () => { this.state = 'live'; }; // (waits for any subs to reach the floor)
+    this.colorTalk();
   }
   inboundAfterScore(scorerTi) {
     const ti = this.opp(scorerTi); const h = this.atk(scorerTi);
@@ -2832,6 +3185,7 @@ class Match {
   turnover(offTi, x, y, why) {
     const sp = this.holder(); if (sp) this.stat(sp, 'to');
     this.pop(why, x, y, 6, PAL.orange);
+    this.call(why === 'SHOT CLOCK' ? 'shotclock' : 'turnover', { sp });
     SFX.whistle();
     const ti = this.opp(offTi);
     const ny = y < 25 ? 0.6 : 49.4;
@@ -2915,6 +3269,7 @@ class Match {
     const q = this.timingQ(s.m, s.layup);
     let tf = 0.6 + 0.48 * q; if (s.user && this.isUser(sp.ti)) tf = Math.max(tf, 0.6 + DIFF.assist[this.diff] * 1.5);
     const tier = s.user ? (sp.ti === this.remoteSide ? (s.netTier || this.tierOf(sp, s.m, s.layup)) : this.startMeterFx(sp, s.m, s.layup)) : null, green = tier === 'perfect';
+    if (green) this.call('green', { sp });
     this.launchShot(sp, tf, q, green, s.user && this.isUser(sp.ti) ? this.userMake(sp, s.layup, tier, q) : null);
     sp.shot = null;
   }
@@ -2977,7 +3332,8 @@ class Match {
         b.state = 'loose'; const ang = Math.atan2(b.y - df.y, b.x - df.x) + rand(-0.6, 0.6);
         b.vx = Math.cos(ang) * rand(10, 18); b.vy = Math.sin(ang) * rand(6, 12); b.vz = rand(2, 8); b.lastTouch = df.ti; b.shot = null; b.looseT = 0; b.missFrom = s.ti; this.shotClock = Math.max(this.shotClock, 6);
         this.pop('BLOCKED!', df.x, df.y, 10, PAL.orange, true); SFX.block(); this.bigPlay(1.4, df.x); this.shake = 0.3; this.excite = Math.min(1, this.excite + 0.4);
-        if (s.ti !== 0) SFX.cheer(0.8); else SFX.ooh();
+        if (s.ti !== 0) SFX.cheer(0.9); else SFX.ooh(1.1);
+        this.call('block', { sp: df });
         this.log(`${RH.shortName(df.p)} rejects ${RH.shortName(s.sp.p)}`);
         if (this.ft === null && this.pendingFT) this.pendingFT = null;
         return;
@@ -2997,8 +3353,9 @@ class Match {
       const sd = Math.hypot(s.x0 - HOOPX[s.hoop], s.y0 - 25), buzzer = s.clockAtRelease != null && s.clockAtRelease <= 1.2;
       const lvl = Math.max(s.alley ? 2.6 : 0, kind === 'dunk' ? 2 : 0, s.three ? (sd > 26.5 ? 2 : 1.3) : 0, this.clutch() ? 1.8 : 0, buzzer ? 2.6 : 0);
       if (lvl > 0) this.bigPlay(lvl, HOOPX[s.hoop]);
-      const homeCrowd = s.ti === 0; this.excite = Math.min(1, this.excite + (homeCrowd ? 0.55 : 0.2) + (s.three ? 0.15 : 0));
-      SFX.cheer(homeCrowd ? 1 : 0.4);
+      const homeCrowd = s.ti === 0, big = s.three || kind === 'dunk' || s.alley || buzzer || this.clutch(); this.excite = Math.min(1, this.excite + (homeCrowd ? 0.55 : 0.2) + (s.three ? 0.15 : 0));
+      if (homeCrowd) SFX.cheer(s.alley || buzzer || this.clutch() ? 1.4 : big ? 1.05 : 0.7);
+      else if (big) SFX.aww(0.7); else SFX.applause(0.25, 1.2); // a few road fans clap
       if (s.dunk) { this.shake = 0.4; }
       if (s.three || s.dunk) s.sp.celebrate = 1.3;
       s.sp.streak = (s.sp.streak || 0) + 1;
@@ -3010,6 +3367,13 @@ class Match {
         const my = tm.score, their = this.T[this.opp(s.ti)].score;
         if (my > their && my - s.pts <= their) { this.gwShot = { sp: s.sp, ti: s.ti }; this.slowT = 1.1; }
       }
+      { // the call, then any follow-ups that can queue behind it
+        const gw = this.gwShot && this.gwShot.sp === s.sp && s.clockAtRelease <= 2 && this.q >= 4 && this.gwShot.ti === s.ti && tm.score - s.pts <= this.T[this.opp(s.ti)].score;
+        this.call(gw ? 'winner' : buzzer ? 'buzzer' : s.alley ? 'alley' : kind === 'dunk' ? 'dunk' : s.three ? (sd > 27 ? 'deep' : 'three') : s.layup ? 'layup' : 'jumper', { sp: s.sp });
+        if (s.fouler) this.call('andOne', { sp: s.sp });
+        if (s.sp.streak === ON_FIRE - 1) this.call('heating', { sp: s.sp }); else if (s.sp.streak === ON_FIRE) this.call('fire', { sp: s.sp });
+        this.scoreTalk(s.ti, s.pts, s.sp);
+      }
       b.state = 'through'; b.throughT = 0; b.throughKind = kind; b.hoopIdx = s.hoop; b.netHit = false; b.fireMake = !!s.onFire; b.rollDir = chance(0.5) ? 1 : -1;
       b.rollA0 = Math.atan2(s.y0 - 25, s.x0 - HOOPX[s.hoop]); b.x = HOOPX[s.hoop]; b.y = 25; b.z = 10; b.shot = null;
       if (kind === 'roll') SFX.rim();
@@ -3019,10 +3383,15 @@ class Match {
       else this.pendingFT = null;
       this.afterScore = { ti: s.ti };
     } else {
-      if (s.sp.streak >= ON_FIRE) this.pop('COOLED OFF', s.sp.x, s.sp.y, 8, PAL.creamD);
+      if (s.sp.streak >= ON_FIRE) { this.pop('COOLED OFF', s.sp.x, s.sp.y, 8, PAL.creamD); this.call('cooled', { sp: s.sp }); }
       s.sp.streak = 0;
-      if (s.airball) { this.pop('AIRBALL', s.ex, s.ey, 6, PAL.creamD); SFX.ooh(); }
-      else { SFX.rim(); this.shotClock = 24; }
+      if (s.airball) { this.pop('AIRBALL', s.ex, s.ey, 6, PAL.creamD); if (s.ti === 1) SFX.chant('airball'); else SFX.aww(0.9); this.call('airball', { sp: s.sp }); }
+      else {
+        SFX.rim(); this.shotClock = 24;
+        if (s.ti === 0 && (s.three || this.clutch()) && chance(0.6)) SFX.aww(s.three ? 0.6 : 0.9);
+        else if (s.ti === 1 && this.clutch()) SFX.cheer(0.6);
+        this.call('miss', { sp: s.sp });
+      }
       b.state = 'loose'; b.looseT = 0; b.shot = null;
       const away = Math.atan2(b.y - s.y0, b.x - s.x0);
       const ang = (chance(0.5) ? away + Math.PI : away) + rand(-1.1, 1.1);
@@ -3035,6 +3404,8 @@ class Match {
   foulOn(df, victim, shooting) {
     df.pf++; this.T[df.ti].fouls++;
     SFX.whistle();
+    if (df.ti === 0 && chance(0.6)) SFX.boo(0.8);
+    this.call('foul', { sp: df }); if (this.T[df.ti].fouls === 5) this.call('bonus', { ti: df.ti });
     this.pop('FOUL', df.x, df.y, 9, PAL.yellow);
     this.log(`Foul on ${RH.shortName(df.p)} (${df.pf})`);
     if (shooting) return;
@@ -3048,6 +3419,8 @@ class Match {
     if (!this.T[sp.ti].on.includes(sp)) sp = this.T[sp.ti].on[0];
     this.ft = { sp, n, k: 0, phase: 'wait', t: 0, m: 0 };
     this.state = 'ft'; this.poss = sp.ti;
+    if (sp.ti === 1 && chance(0.75)) SFX.hoot();
+    this.colorTalk();
     const h = this.atk(sp.ti), hx = HOOPX[h], dir = h ? -1 : 1;
     const ftx = hx + dir * 13.8;
     const lane = [[2.5, 16.6], [2.5, 33.4], [6.5, 16.6], [6.5, 33.4], [9.5, 16.6], [9.5, 33.4]];
@@ -3070,7 +3443,7 @@ class Match {
     let pm;
     const base = clamp(0.42 + this.R(sp, 'sht') * 0.0047, 0.4, 0.94);
     let green = false;
-    if (this.isUser(sp.ti)) { pm = base * (0.72 + 0.3 * q) + DIFF.assist[this.diff] * 0.4; green = (sp.ti === this.remoteSide ? (netTier || this.tierOf(sp, m, false, true)) : this.startMeterFx(sp, m, false, true)) === 'perfect'; }
+    if (this.isUser(sp.ti)) { pm = base * (0.72 + 0.3 * q) + DIFF.assist[this.diff] * 0.4; green = (sp.ti === this.remoteSide ? (netTier || this.tierOf(sp, m, false, true)) : this.startMeterFx(sp, m, false, true)) === 'perfect'; if (green) this.call('greenFT', { sp }); }
     else pm = base + (this.userSide != null ? DIFF.aiMake[this.diff] : 0);
     const made = green || chance(clamp(pm, 0.2, 0.97));
     const h = this.atk(sp.ti), hx = HOOPX[h];
@@ -3085,9 +3458,10 @@ class Match {
     f.k++;
     if (s.made) {
       this.T[s.ti].score += 1; this.flash[s.ti] = 1; this.stat(s.sp, 'ftm'); this.stat(s.sp, 'pts');
-      if (s.ti === 0) SFX.cheer(0.5);
+      if (s.ti === 0) SFX.applause(0.55, 1.6);
+      this.scoreTalk(s.ti, 1, s.sp);
       this.pop('FT GOOD', HOOPX[s.hoop] + (s.hoop ? -6 : 6), 25, 17, PAL.cream);
-    } else { SFX.rim(); this.pop('NO GOOD', HOOPX[s.hoop] + (s.hoop ? -6 : 6), 25, 17, PAL.creamD); if (s.ti !== 0) SFX.cheer(0.4); }
+    } else { SFX.rim(); this.pop('NO GOOD', HOOPX[s.hoop] + (s.hoop ? -6 : 6), 25, 17, PAL.creamD); if (s.ti !== 0) SFX.cheer(0.45); else SFX.aww(0.5); }
     b.shot = null;
     if (f.k < f.n) { b.state = 'held'; b.owner = f.sp; f.phase = 'wait'; f.t = 0; return; }
     this.ft = null;
@@ -3112,7 +3486,8 @@ class Match {
   }
   stealBall(df, h, label) {
     this.stat(df, 'stl'); this.stat(h, 'to'); h.move = null;
-    this.pop(label, df.x, df.y, 8, PAL.green, true); SFX.steal(); this.bigPlay(0.6, df.x); this.excite = Math.min(1, this.excite + 0.3);
+    this.pop(label, df.x, df.y, 8, PAL.green, true); SFX.steal(); if (df.ti === 0) SFX.cheer(0.75); else SFX.aww(0.5);
+    this.call('steal', { sp: df }); this.bigPlay(0.6, df.x); this.excite = Math.min(1, this.excite + 0.3);
     this.log(`${RH.shortName(df.p)} picks ${RH.shortName(h.p)}'s pocket`);
     if (chance(0.45)) this.give(df);
     else { const b = this.ball; b.state = 'loose'; b.owner = null; b.looseT = 0; const a = Math.atan2(df.y - h.y, df.x - h.x) + rand(-0.8, 0.8); b.vx = Math.cos(a) * 9; b.vy = Math.sin(a) * 7; b.vz = 3; b.z = 2; b.lastTouch = df.ti; b.missFrom = null; }
@@ -3155,6 +3530,7 @@ class Match {
       const sc = [0, 1].map(ti => { const pr = tp.press[ti]; const c = this.T[ti].on[4]; const timing = pr == null ? 0.05 : clamp(1 - Math.abs(pr - 0.65) * 2.4, 0, 1); return timing * 0.65 + (this.R(c, 'reb') + this.R(c, 'blk')) / 200 * 0.35 + rand(0, 0.15); });
       const w = sc[0] >= sc[1] ? 0 : 1; this.tipWinner = w;
       const c = this.T[w].on[4]; this.pop('TIP WON', c.x, c.y, 12, PAL.cream); this.bigPlay(0.9, 47);
+      if (this.q === 1) SFX.cheer(0.6); this.call('tip', { ti: w });
       const tgt = this.T[w].on[0];
       this.ball.z = 10; this.doPass(c, tgt); this.ball.z = 10; this.state = 'live'; this.poss = w; this.shotClock = 24;
       if (this.userSide != null) this.forPads(() => { this.ctrl = w === this.userSide ? c : this.T[this.userSide].on[0]; });
@@ -3177,7 +3553,7 @@ class Match {
         if (!fouledOut && sub.p.ovr < sp.p.ovr - 10 && sp.energy > 30) continue;
         // whistle, then the sub jogs on from his seat and the man coming out jogs off to it
         const ti = this.T.indexOf(tm); this.animateSub(ti, sp, sub);
-        if (!subs) SFX.subWhistle();
+        if (!subs) { SFX.subWhistle(); this.call('sub', { sp: sub }); }
         subs++;
         sub.x = sp.x; sub.y = sp.y; sub.tx = sp.tx; sub.ty = sp.ty; sub.vx = sub.vy = 0; sub.z = 0; sub.slot = i; sub.shot = null; sp.slot = -1; sp.shot = null;
         tm.on[i] = sub;
@@ -3303,6 +3679,9 @@ class Match {
     this.state = 'qbreak'; this.stateT = 0;
     const lbl = this.q === 2 ? 'HALFTIME' : this.q >= 4 ? 'END OF REGULATION' : `END OF ${['', '1ST', '2ND', '3RD', '4TH'][this.q] || 'OT'}`;
     this.banner(lbl, `${this.T[1].t.abbr} ${s1}  -  ${this.T[0].t.abbr} ${s0}`, 2.4, PAL.cream);
+    const lead = s0 === s1 ? `All tied at ${s0}.` : `The ${this.T[s0 > s1 ? 0 : 1].t.name} lead by ${Math.abs(s0 - s1)}.`;
+    if (this.q >= 4) this.call('ot'); else if (this.q === 2) this.call('half', { lead }); else this.call('qend', { qth: ['', 'first', 'second', 'third'][this.q] || 'first' });
+    if (this.q === 2 && s0 > s1) SFX.applause(0.7, 2.5);
   }
   finish() {
     this.state = 'final'; this.stateT = 0; this.bigPlay(this.gwShot ? 3 : 2, this.ball.x);
@@ -3311,7 +3690,8 @@ class Match {
     this.banner(gw ? 'GAME WINNER!' : 'FINAL', gw ? RH.shortName(this.gwShot.sp.p).toUpperCase() + ' WINS IT' : `${this.T[w].t.city.toUpperCase()} WIN`, 3.2, gw ? PAL.orange : PAL.cream);
     this.T[w].on.forEach(sp => sp.celebrate = 4);
     this.confetti([this.T[w].t.c1, this.T[w].t.c2, PAL.cream], gw ? 160 : 90);
-    if (w === 0) SFX.cheer(1.6);
+    if (w === 0) { SFX.cheer(1.6); SFX.applause(1.3, 4.5); } else { SFX.aww(1.1); SFX.applause(0.3, 2.5); }
+    this.call('final', { ti: w, ws: this.T[w].score, ls: this.T[1 - w].score });
     if (this.isUser(w)) setTimeout(() => SFX.jingle(), 700);
   }
   result() {
@@ -3399,7 +3779,7 @@ class Match {
         this.think(dt); this.physics(dt); this.updateBall(dt);
         this.energy(dt);
         if (this.state !== 'live') break;
-        if (this.clutch() && !this.clutchShown) { this.clutchShown = true; this.banner('CLUTCH TIME', 'UNDER 30 SECONDS', 1.6, PAL.orange); }
+        if (this.clutch() && !this.clutchShown) { this.clutchShown = true; this.banner('CLUTCH TIME', 'UNDER 30 SECONDS', 1.6, PAL.orange); this.call('clutch'); }
         if (this.shotClock <= 0 && this.holder() && this.clock > 0) { const h = this.holder(); this.turnover(h.ti, h.x, h.y, 'SHOT CLOCK'); break; }
         if (this.clock <= 0) {
           this.clock = 0;
@@ -4395,7 +4775,7 @@ class Match {
       const p = this.ctrl.p, maxC = Math.floor((leftW + 1) / 6);
       let label = `#${p.num} ${p.last}`; if (label.length > maxC - 3) label = label.slice(0, maxC - 3);
       drawText(ctx, label, 6, 8, PAL.cream, 1);
-      drawText(ctx, p.pos, 6 + leftW, 8, PAL.orange, 1, 'right');
+      drawText(ctx, p.pos, 6 + RH.textWidth(label) + 7, 8, PAL.orange, 1); // position right after the name
     }
     // right: a prompt when you need to act, otherwise the latest play; wrapped to two lines
     const pr = this.prompt(), f = this.feed[0];
@@ -4479,7 +4859,7 @@ const NET = (() => {
   const MSTATES = ['intro', 'tipoff', 'live', 'dead', 'ft', 'qbreak', 'half', 'final'];
   const BSTATES = ['dead', 'held', 'pass', 'shot', 'loose', 'through', 'tip'];
   const FTPH = ['wait', 'ready', 'meter', 'flight', 'done'];
-  const SOUNDS = ['cheer', 'whistle', 'subWhistle', 'rim', 'swish', 'steal', 'shook', 'ooh', 'bounce', 'rimTick', 'pass', 'move', 'dunk', 'buzzer', 'block', 'ankles'];
+  const SOUNDS = ['cheer', 'aww', 'boo', 'hoot', 'chant', 'applause', 'whistle', 'subWhistle', 'rim', 'swish', 'steal', 'shook', 'ooh', 'bounce', 'rimTick', 'pass', 'move', 'dunk', 'buzzer', 'block', 'ankles'];
   const PEERJS = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
   const r1 = v => Math.round(v * 10) / 10;
   const newCode = () => Array.from({ length: 5 }, () => CODE_CH[Math.floor(Math.random() * CODE_CH.length)]).join('');
@@ -4616,7 +4996,7 @@ const NET = (() => {
   function hostRecord(m) {
     m.netEv = []; m.evSeq = 0; m._evDepth = 0;
     const rec = (name, type) => { const f = m[name].bind(m); m[name] = (...a) => { m.netEv.push([++m.evSeq, type, ...a]); if (m.netEv.length > 40) m.netEv.shift(); m._evDepth++; try { return f(...a); } finally { m._evDepth--; } }; };
-    rec('pop', 'p'); rec('banner', 'b'); rec('netHit', 'n'); rec('bigPlay', 'g'); rec('log', 'l'); rec('confetti', 'c');
+    rec('pop', 'p'); rec('banner', 'b'); rec('say', 'a'); rec('netHit', 'n'); rec('bigPlay', 'g'); rec('log', 'l'); rec('confetti', 'c');
   }
   // game sounds the guest should hear (meter sounds and crowd/shutter are made on each screen)
   let soundsWrapped = false;
@@ -4634,7 +5014,7 @@ const NET = (() => {
     const fx = [m.flash[0], m.flash[1], m.shake, m.rimShake[0], m.rimShake[1], m.rimBend[0], m.rimBend[1], m.excite].map(v => Math.round(v * 100));
     const refs = m.refs.map(r => [r1(r.x), r1(r.y), r.face, Math.hypot(r.vx, r.vy) > 2 ? 1 : 0]);
     const ft = m.ft ? [FTPH.indexOf(m.ft.phase), id(m.ft.sp), m.ft.k, m.ft.n] : 0;
-    const ev = m.netEv.filter(e => e[0] > (ack || 0)).slice(-14).map(e => e.map(v => typeof v === 'string' ? v.slice(0, 48) : v));
+    const ev = m.netEv.filter(e => e[0] > (ack || 0)).slice(-14).map(e => e.map(v => typeof v === 'string' ? v.slice(0, e[1] === 'a' ? 110 : 48) : v));
     return { t: Math.round(m.time * 1000), g, pl, ball, fx, refs, ft, ev };
   }
 
@@ -4735,7 +5115,7 @@ const NET = (() => {
       if (e[0] <= m._evSeen) continue; m._evSeen = e[0];
       const [, type, ...a] = e;
       try {
-        if (type === 'p') m.pop(...a); else if (type === 'b') m.banner(...a); else if (type === 'n') m.netHit(...a);
+        if (type === 'p') m.pop(...a); else if (type === 'b') m.banner(...a); else if (type === 'a') m.say(...a); else if (type === 'n') m.netHit(...a);
         else if (type === 'g') m.bigPlay(...a); else if (type === 'l') m.log(...a); else if (type === 'c') m.confetti(...a);
         else if (type === 's' && SOUNDS.includes(a[0]) && typeof SFX[a[0]] === 'function') SFX[a[0]](...a.slice(1));
       } catch (err) { console.error(err); }
@@ -5054,7 +5434,7 @@ function renderMenu() {
     const meH = lg.h === s.userTid, my = meH ? lg.hs : lg.as, th = meH ? lg.as : lg.hs, o = RH.T(meH ? lg.a : lg.h), won = my > th;
     const top = Object.entries(lg.box || {}).filter(([id]) => t.roster.includes(id)).sort((a, b) => b[1].pts - a[1].pts)[0];
     const tp = top && RH.P(top[0]);
-    last = `<span class="hl-score"><b class="${won ? 'w' : 'l'}">${won ? 'W' : 'L'}</b> ${my}-${th}${lg.ot ? '<small> OT</small>' : ''}</span><span class="hl-opp">${meH ? 'vs' : '@'} ${emImg(o, 20)} ${esc(o.city)} ${esc(o.name)}</span>${tp ? `<span class="ht-sub">Top: ${esc(tp.last)} ${top[1].pts} PTS · ${top[1].reb} REB · ${top[1].ast} AST</span>` : ''}`;
+    last = `<span class="hl-score"><b class="${won ? 'w' : 'l'}">${won ? 'W' : 'L'}</b> ${my}-${th}${lg.ot ? '<small> OT</small>' : ''}</span><span class="hl-opp">${meH ? 'vs' : '@'} ${emImg(o, 20)} ${esc(o.city)} ${esc(o.name)}</span>${tp ? `<span class="ht-sub">Top: ${esc(tp.last)} <span class="nw">${top[1].pts} PTS</span> · <span class="nw">${top[1].reb} REB</span> · <span class="nw">${top[1].ast} AST</span></span>` : ''}`;
   } else last = `<span class="hl-score">—</span><span class="ht-sub">No games yet. The season opener is up next.</span>`;
   // upcoming games
   const up = [];
@@ -5655,17 +6035,21 @@ function renderStats() {
 function renderSettings() {
   const s = S_(), st = s.settings;
   const seg = (k, vals, labels) => `<div class="seg">${vals.map((v, i) => `<button class="${st[k] === v ? 'on' : ''}" data-act="setopt" data-k="${k}" data-v="${v}">${labels[i]}</button>`).join('')}</div>`;
-  render('settings', `${hdr('SETTINGS')}<div class="scroll bg-dots"><div class="wrap"><div class="grid2">
-    <fieldset class="panel"><legend>Game</legend><div class="list">
+  render('settings', `${hdr('SETTINGS')}<div class="scroll bg-dots"><div class="wrap"><div class="grid2 set-grid"><div class="set-col">
+    <fieldset class="panel"><legend>Sound</legend><div class="list">
       <div><p class="disp tiny" style="margin:0 0 6px">SOUND</p>${seg('sound', [true, false], ['ON', 'OFF'])}</div>
-      <div><p class="disp tiny" style="margin:0 0 6px">MUSIC</p>${seg('music', [true, false], ['ON', 'OFF'])}</div>
       <div><label class="disp tiny" for="vol">VOLUME</label><input id="vol" type="range" min="0" max="1" step="0.05" value="${st.volume}" data-act="volume" style="width:100%;accent-color:var(--orange)"></div>
+      <div><p class="disp tiny" style="margin:0 0 6px">MUSIC</p>${seg('music', [true, false], ['ON', 'OFF'])}</div>
+      <div><p class="disp tiny" style="margin:0 0 6px">ANNOUNCER</p>${seg('announcer', [true, false], ['ON', 'OFF'])}<p class="tiny muted" style="margin:6px 0 0">${RH.VOICE.available ? 'Play-by-play and color commentary, spoken by your device.' : 'This browser has no speech voices, so the booth stays quiet.'}</p></div>
+      <div><p class="disp tiny" style="margin:0 0 6px">CROWD</p>${seg('crowd', [true, false], ['ON', 'OFF'])}</div>
+    </div></fieldset>
+    <fieldset class="panel"><legend>Game</legend><div class="list">
       <div><p class="disp tiny" style="margin:0 0 6px">SHOT METER</p>${seg('showMeter', [true, false], ['SHOW', 'HIDE'])}</div>
       <div><p class="disp tiny" style="margin:0 0 6px">DIFFICULTY</p>${seg('difficulty', [0, 1, 2, 3], RH.DIFF_NAMES)}</div>
       <div><p class="disp tiny" style="margin:0 0 6px">QUARTER LENGTH</p>${seg('qlen', [2, 3, 4, 5], ['2 MIN', '3 MIN', '4 MIN', '5 MIN'])}</div>
       <div><p class="disp tiny" style="margin:0 0 6px">PLAYING ON</p>${modeSeg('setopt', st.controls || 'auto', true)}<p class="tiny muted" style="margin:6px 0 0">Now using ${ctrlMode() === 'pc' ? 'PC keyboard' : 'phone touch'} controls.</p></div>
       <div><p class="disp tiny" style="margin:0 0 6px">PLAYOFF SERIES (NEXT POSTSEASON)</p>${seg('bestOf', [1, 3], ['SINGLE', 'BEST OF 3'])}</div>
-    </div></fieldset>
+    </div></fieldset></div>
     <fieldset class="panel"><legend>Controls</legend>
     <p class="disp tiny" style="margin:0 0 8px;color:var(--orange)">PC KEYBOARD</p>${controlsHTML('pc', 1)}
     <p class="disp tiny" style="margin:18px 0 8px;color:var(--orange)">PHONE TOUCH</p>${controlsHTML('phone', 1)}
@@ -5748,11 +6132,11 @@ function refresh() {
   const m = { menu: renderMenu, franchise: renderFranchise, team: renderTeam, roster: renderRoster, schedule: renderSchedule, stats: renderStats, settings: renderSettings, offseason: renderOffseason };
   (m[CUR] || renderMenu)();
 }
-function applySettings() { const st = S_().settings; SFX.setEnabled(st.sound); SFX.setVolume(st.volume); SFX.setMusic(st.music !== false); }
+function applySettings() { const st = S_().settings; SFX.setEnabled(st.sound); SFX.setVolume(st.volume); SFX.setMusic(st.music !== false); SFX.setCrowd(st.crowd !== false); RH.VOICE.setOn(st.sound && st.announcer !== false); RH.VOICE.setVolume(Math.min(1, st.volume * 1.25)); }
 function pauseGame(on) {
   if (!MATCH) return;
   MATCH.paused = on; SFX.musicDuck(on);
-  if (on) modal(`<h3>PAUSED</h3><p class="tiny muted" style="margin:0">${esc(MATCH.T[1].t.abbr)} ${MATCH.T[1].score} · ${esc(MATCH.T[0].t.abbr)} ${MATCH.T[0].score} · Q${Math.min(MATCH.q, 4)}${MATCH.q > 4 ? ' OT' : ''}</p><div class="list"><button class="btn primary" data-act="resume">Resume</button><button class="btn" data-act="mute">${SFX.on ? 'Mute Sound' : 'Turn Sound On'}</button><button class="btn" data-act="simrest">Sim Rest of Game</button></div><p class="disp tiny" style="margin:0">CONTROLS · ${ctrlMode() === 'pc' ? 'PC KEYBOARD' : 'PHONE TOUCH'}</p>${controlsHTML(ctrlMode(), 1)}<button class="btn sm" data-act="togglemode">Switch to ${ctrlMode() === 'pc' ? 'Phone Touch' : 'PC Keyboard'} Controls</button>`, 'sm');
+  if (on) modal(`<h3>PAUSED</h3><p class="tiny muted" style="margin:0">${esc(MATCH.T[1].t.abbr)} ${MATCH.T[1].score} · ${esc(MATCH.T[0].t.abbr)} ${MATCH.T[0].score} · Q${Math.min(MATCH.q, 4)}${MATCH.q > 4 ? ' OT' : ''}</p><div class="list"><button class="btn primary" data-act="resume">Resume</button><button class="btn" data-act="mute">${SFX.on ? 'Mute Sound' : 'Turn Sound On'}</button><div class="pause-two"><button class="btn sm" data-act="togglebooth">Announcer: ${S_().settings.announcer !== false ? 'On' : 'Off'}</button><button class="btn sm" data-act="togglecrowd">Crowd: ${S_().settings.crowd !== false ? 'On' : 'Off'}</button></div><button class="btn" data-act="simrest">Sim Rest of Game</button></div><p class="disp tiny" style="margin:0">CONTROLS · ${ctrlMode() === 'pc' ? 'PC KEYBOARD' : 'PHONE TOUCH'}</p>${controlsHTML(ctrlMode(), 1)}<button class="btn sm" data-act="togglemode">Switch to ${ctrlMode() === 'pc' ? 'Phone Touch' : 'PC Keyboard'} Controls</button>`, 'sm');
   else closeModal();
 }
 const ACT = {
@@ -5864,12 +6248,14 @@ const ACT = {
   helpmode: el => { setControls(el.dataset.v); updateTouchVisibility(); ACT.ctrlhelp(); },
   resume: () => pauseGame(false),
   resumehalf: () => { closeModal(); MATCH && MATCH.resumeFromHalf(); },
+  togglebooth: () => { const st = S_().settings; st.announcer = st.announcer === false; RH.save(); applySettings(); if (MATCH && MATCH.paused) pauseGame(true); },
+  togglecrowd: () => { const st = S_().settings; st.crowd = st.crowd === false; RH.save(); applySettings(); if (MATCH && MATCH.paused) pauseGame(true); },
   mute: () => { const st = S_().settings; st.sound = !st.sound; RH.save(); applySettings(); const b = $('#gmute'); if (b) b.textContent = SFX.on ? 'SOUND ON' : 'MUTED'; if (MATCH && MATCH.paused) pauseGame(true); },
   simrest: () => { if (!MATCH) return; const m = MATCH; closeModal(); const res = m.simRemainder(); m.over = true; SFX.stopCrowd(); endGame(res); },
   volume: () => { }
 };
-document.addEventListener('pointerdown', () => SFX.init(), { capture: true });
-document.addEventListener('keydown', () => SFX.init(), { capture: true });
+document.addEventListener('pointerdown', () => { SFX.init(); RH.VOICE.prime(); }, { capture: true });
+document.addEventListener('keydown', () => { SFX.init(); RH.VOICE.prime(); }, { capture: true });
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act; if (a === 'volume' || a === 'tradechk' || a === 'tradepk') return;
@@ -5949,12 +6335,16 @@ function startBg() {
 function stopBg() { if (BG) { BG.stop && BG.stop(); BG = null; } }
 document.addEventListener('visibilitychange', () => { if (document.hidden && RH.NET.S.role === 'host' && RH.NET.S.phase === 'game') startBg(); else stopBg(); });
 /* ---------- main loop ---------- */
-let LAST_T = performance.now();
+let LAST_T = performance.now(), WAS_LIVE = false;
 function frame(t) {
   const dt = Math.min(0.05, (t - LAST_T) / 1000); LAST_T = t;
   try {
-    if (CUR === 'game' && MATCH) { RH.NET.preFrame(); MATCH.update(dt); RH.NET.postFrame(); if (MATCH) { MATCH.render(GCTX); updateContextUI(); } }
+    const inGame = CUR === 'game' && !!MATCH;
+    if (inGame) { RH.NET.preFrame(); MATCH.update(dt); RH.NET.postFrame(); if (MATCH) { MATCH.render(GCTX); updateContextUI(); } }
     else if (ATTRACT && (CUR === 'menu' || CUR === 'title')) { ATTRACT.m.update(dt); ATTRACT.m.render(ATTRACT.ctx); }
+    // the crowd and the booth only while a game is on screen and running
+    const live = inGame && !!MATCH && !MATCH.paused && !MATCH.over;
+    SFX.setCrowdLive(live); if (WAS_LIVE && !live && !(MATCH && MATCH.over)) RH.VOICE.stop(); WAS_LIVE = live;
   } catch (err) { console.error(err); }
   requestAnimationFrame(frame);
 }
