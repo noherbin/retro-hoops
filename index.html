@@ -1864,9 +1864,9 @@ const SHD = {}; function shd(c) { return SHD[c] || (SHD[c] = mixHex(c, '#3b3360'
 const CHR_W = 27, CHR_H = 34, CHR_OX = 13, CHR_OY = 32;   // art grid; (CHR_OX, CHR_OY) = feet centre on the ground line
 const CHAR_CACHE = new Map();
 function charArt(o, sc) {
-  const pose = o.seated ? 'stand' : (o.pose || 'stand'), fr = (pose === 'run' ? (o.frame | 0) % 4 : pose === 'celebrate' ? (o.frame | 0) % 2 : 0);
+  const pose = o.seated ? 'stand' : (o.pose || 'stand'), fr = (pose === 'run' ? (o.frame | 0) % 4 : pose === 'celebrate' || pose === 'signal' ? (o.frame | 0) % 2 : 0);
   const back = !!o.back, front = !o.facing || back, f = o.facing < 0 ? -1 : 1, LE = (o.tall || 0) >= 2 ? 1 : 0, photo = pose === 'photo', fall = pose === 'fall';
-  const key = [o.skin, o.hair, o.hairStyle, o.jersey, o.trim, o.shorts, o.pants, o.sleeves, o.stripes, o.tie, o.shoe, pose, fr, front ? 0 : f, o.num, LE, sc, o.seated ? 1 : 0, back ? 1 : 0, o.cap, o.lens].join('|');
+  const key = [o.skin, o.hair, o.hairStyle, o.jersey, o.trim, o.shorts, o.pants, o.sleeves, o.stripes, o.tie, o.shoe, pose, fr, front ? 0 : f, o.num, LE, sc, o.seated ? 1 : 0, back ? 1 : 0, o.cap, o.lens, o.whistle ? 1 : 0].join('|');
   const hit = CHAR_CACHE.get(key); if (hit) return hit;
   if (CHAR_CACHE.size > 1600) CHAR_CACHE.clear();
   const W = CHR_W, H = CHR_H, OX = CHR_OX, OY = CHR_OY, N = W * H;
@@ -1967,6 +1967,7 @@ function charArt(o, sc) {
   else for (const e of eyes) R(e, hT + 4, 1, 2, OUTLINE, true);
   if (hs !== 5 && !photo) { const bl = mixHex(skin, '#ff6f86', 0.42); for (const e of eyes) R(e + (e < 1 ? -1 : 1), hT + 6, 1, 1, bl, true); }
   if (pose === 'celebrate' && !back) R(front ? 0 : 1, hT + 7, front ? 1 : 2, 1, mixHex(skin, OUTLINE, 0.65), true);
+  if (o.whistle && !back) { if (front) R(0, hT + 7, 1, 1, '#dfe4ec', true); else { R(4, hT + 6, 2, 1, '#dfe4ec', true); R(6, hT + 6, 1, 1, '#9aa3b2', true); } } // ref's whistle
   commit(true);
   // front arm
   let flashAt = null;
@@ -1982,7 +1983,13 @@ function charArt(o, sc) {
   } else if (!upF) {
     {
       begin();
-      if (pose === 'dribble') { R(4, jTop, 2, 2, armC); R(5, jTop + 1, 2, 3, armC); R(5, jTop + 3, 2, 1, skin); }
+      if (pose === 'signal') { // arm straight up beside the head (frame 1: hand waving in over it): a ref calling something, or a high five
+        const top = hT - 2, slv = o.stripes ? jer : armC; // a ref's short sleeve shows on the raised arm
+        if (fr === 0) { R(6, top, 2, jTop - top, armC); R(6, top, 2, 2, skin); }
+        else { R(6, top + 2, 2, jTop - top - 2, armC); R(4, top + 1, 3, 2, armC); R(3, top, 2, 2, skin); }
+        R(4, jTop, 4, 2, slv); if (o.stripes) { R(6, jTop - 3, 2, 3, slv); R(7, jTop - 2, 1, 1, '#2a2d3a'); R(5, jTop, 1, 2, '#2a2d3a'); }
+      }
+      else if (pose === 'dribble') { R(4, jTop, 2, 2, armC); R(5, jTop + 1, 2, 3, armC); R(5, jTop + 3, 2, 1, skin); }
       else if (pose === 'defend') { R(4, jTop, 4, 2, armC); R(6, jTop + 1, 2, 3, armC); R(6, jTop + 3, 2, 1, skin); }
       else armDown(1, -sw);
       commit(false);
@@ -2443,6 +2450,8 @@ const SFX = (() => {
     rim: () => { tone(920, 0.18, 'triangle', 0.12); tone(1380, 0.12, 'triangle', 0.06); tone(120, 0.08, 'sine', 0.15); },
     board: () => { tone(180, 0.1, 'square', 0.1, -60); noise(0.05, 0.08, 800); },
     whistle: () => { tone(2600, 0.32, 'sine', 0.12); tone(2650, 0.32, 'square', 0.03); },
+    subWhistle: () => { for (const [d, at] of [[0.09, 0.25], [0.24, 0.39]]) { tone(2700, d, 'sine', 0.12, 0, at); tone(2750, d, 'square', 0.025, 0, at); } }, // short "tweet-tweeet" to wave subs in
+    clap: () => { noise(0.05, 0.24, 1700, 0.9, 'bandpass'); noise(0.03, 0.1, 4200, 1, 'highpass', 0.004); },     // high five
     buzzer: () => { tone(220, 0.9, 'sawtooth', 0.14); tone(223, 0.9, 'square', 0.08); },
     steal: () => { tone(330, 0.06, 'square', 0.1); tone(660, 0.1, 'square', 0.1, 0, 0.05); },
     block: () => { noise(0.12, 0.25, 300, 1, 'lowpass'); tone(90, 0.15, 'square', 0.15, -40); },
@@ -2467,6 +2476,7 @@ RH.SFX = SFX;
 const HOOPX = [5.25, 88.75];
 const VW = 640, VH = 360, HUD_H = 24, CH = VH + HUD_H, GRAV = 32;
 const SEAT_Y = -0.7;   // bench row, just off the far sideline (ft)
+const SUB_WHISTLE = 0.25, SUB_GO = 0.75; // substitution: the ref's whistle, then the players start to jog (s)
 const ON_FIRE = 3; // makes in a row to catch fire (heating up one before)
 const FIRE_C = ['#c8301e', '#f08a2c', '#f6d04a', '#fff3b0'];
 const SPOTS = {
@@ -2808,11 +2818,11 @@ class Match {
   setupInbound(ti, x, y, holder, sc = 24, delay = 0.9) {
     const tm = this.T[ti]; holder = holder || tm.on[0];
     const nSubs = this.autoSubs();
-    holder = tm.on.includes(holder) ? holder : tm.on[0];
+    if (!tm.on.includes(holder) || this.subOf(holder)) holder = tm.on.filter(s => !this.subOf(s)).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] || tm.on[0]; // not a sub still jogging on
     holder.x = holder.tx = clamp(x, 1, 93); holder.y = holder.ty = clamp(y, 1, 49); holder.vx = holder.vy = 0; holder.shot = null; holder.z = 0;
     this.give(holder); this.shotClock = sc; this.poss = ti;
     this.forPads(() => { if (this.userSide === ti) this.ctrl = holder; else if (this.userSide != null) { this.ctrl = this.T[this.userSide].on[holder.slot] || this.T[this.userSide].on[0]; } });
-    this.state = 'dead'; this.deadT = nSubs ? Math.max(delay, this.subWait() + 0.15) : delay; this.pendingAfter = () => { this.state = 'live'; };
+    this.state = 'dead'; this.deadT = delay; this.pendingAfter = () => { this.state = 'live'; }; // (waits for any subs to reach the floor)
   }
   inboundAfterScore(scorerTi) {
     const ti = this.opp(scorerTi); const h = this.atk(scorerTi);
@@ -3034,9 +3044,9 @@ class Match {
   }
   /* ---------- free throws ---------- */
   startFT(sp, n) {
-    const nSubs = this.autoSubs();
+    this.autoSubs(sp);
     if (!this.T[sp.ti].on.includes(sp)) sp = this.T[sp.ti].on[0];
-    this.ft = { sp, n, k: 0, phase: 'wait', t: 0, m: 0, waitFor: nSubs ? this.subWait() : 0 };
+    this.ft = { sp, n, k: 0, phase: 'wait', t: 0, m: 0 };
     this.state = 'ft'; this.poss = sp.ti;
     const h = this.atk(sp.ti), hx = HOOPX[h], dir = h ? -1 : 1;
     const ftx = hx + dir * 13.8;
@@ -3135,7 +3145,7 @@ class Match {
     for (const ti of [0, 1]) if (!this.isUser(ti)) this.tip.press[ti] = 0.65 + gauss() * (0.22 - (this.R(this.T[ti].on[4], 'reb') - 50) * 0.002);
     SFX.whistle();
   }
-  tipPress(ti) { if (this.state !== 'tipoff' || this.tip.press[ti] != null) return; this.tip.press[ti] = this.tip.t; const c = this.T[ti].on[4]; c.vz = 13; c.z = 0.01; c.pose = 'block'; }
+  tipPress(ti) { if (this.state !== 'tipoff' || this.tip.press[ti] != null || this.subsBusy()) return; this.tip.press[ti] = this.tip.t; const c = this.T[ti].on[4]; c.vz = 13; c.z = 0.01; c.pose = 'block'; }
   updateTip(dt) {
     const tp = this.tip; tp.t += dt; const b = this.ball;
     b.z = 6 + 22.6 * tp.t - 16 * tp.t * tp.t;
@@ -3152,21 +3162,23 @@ class Match {
   }
 
   /* ---------- substitutions ---------- */
-  autoSubs() {
-    let subs = 0; const popped = [false, false];
+  autoSubs(keep) {
+    let subs = 0;
     for (const tm of this.T) {
       for (let i = 0; i < 5; i++) {
         const sp = tm.on[i];
         const fouledOut = sp.pf >= 6;
+        if (sp === keep && !fouledOut) continue; // the fouled man shoots his own free throws
         if (sp.energy > 44 && !fouledOut) continue;
         const bench = tm.all.filter(s => !tm.on.includes(s) && s.energy > 72 && s.pf < 6);
         if (!bench.length) continue;
         bench.sort((a, b) => ((b.p.pos === sp.p.pos ? 12 : 0) + b.p.ovr) - ((a.p.pos === sp.p.pos ? 12 : 0) + a.p.ovr));
         const sub = bench[0];
         if (!fouledOut && sub.p.ovr < sp.p.ovr - 10 && sp.energy > 30) continue;
-        // the sub gets up from his seat and jogs to the spot; the man coming out jogs over and takes that seat
-        const ti = this.T.indexOf(tm), seatX = this.animateSub(ti, sp, sub);
-        subs++; if (!popped[ti]) { popped[ti] = true; this.pop('SUB', seatX, 1.2, 4, PAL.yellow); }
+        // whistle, then the sub jogs on from his seat and the man coming out jogs off to it
+        const ti = this.T.indexOf(tm); this.animateSub(ti, sp, sub);
+        if (!subs) SFX.subWhistle();
+        subs++;
         sub.x = sp.x; sub.y = sp.y; sub.tx = sp.tx; sub.ty = sp.ty; sub.vx = sub.vy = 0; sub.z = 0; sub.slot = i; sub.shot = null; sp.slot = -1; sp.shot = null;
         tm.on[i] = sub;
         if (this.ball.owner === sp) this.ball.owner = sub;
@@ -3177,29 +3189,97 @@ class Match {
     }
     return subs;
   }
-  // the sub jogs from his seat to the spot; the man coming out jogs over and takes that seat (also used on an online guest's screen)
+  // A substitution, start to finish (also run on an online guest's screen): the ref nearest the ball stops and blows his
+  // whistle, then waves the sub in. The sub gets up off the bench and jogs out to the man he's replacing, who jogs to meet him;
+  // whoever gets there first waits with a hand up. They slap hands, then the sub runs to his spot and the other heads to the
+  // seat the sub left. Play waits until every sub is on the floor (subsBusy).
   animateSub(ti, sp, sub) {
     const seats = this.seatsOf(ti);
     let si = seats.indexOf(sub); if (si < 0) si = seats.indexOf(null); if (si < 0) si = seats.length - 1;
     seats[si] = sp;
-    const seatX = RH.seatX(ti, si), d = Math.hypot(sp.x - seatX, sp.y - SEAT_Y);
-    sub.enter = { fx: seatX, fy: SEAT_Y, t: 0, dur: clamp(d / 22, 0.8, 1.5) };
-    (this.walkOff || (this.walkOff = [])).push({ sp, ti, fx: sp.x, fy: sp.y, tx: seatX, ty: SEAT_Y, t: 0, dur: clamp(d / 15, 1.0, 2.2) });
+    const seatX = RH.seatX(ti, si);
+    // one whistle for everyone checking in at this stoppage
+    if (!this.subCall || this.subCall.t > SUB_GO) {
+      const bx = this.ball.x, trail = this.refs.find(r => r.role === 'trail'); // the official on the bench side, unless he's away from the play
+      const ref = trail && Math.abs(trail.x - bx) < 24 ? trail : this.refs.slice().sort((a, b) => Math.abs(a.x - bx) - Math.abs(b.x - bx))[0];
+      this.subCall = { t: 0, ref, tx: seatX, n: 0 };
+    }
+    const c = this.subCall; c.tx = (c.tx * c.n + seatX) / (c.n + 1); c.n++;
+    const S = { x: seatX, y: SEAT_Y }, F = { x: sp.x, y: sp.y }, d = Math.hypot(F.x - S.x, F.y - S.y);
+    const vIn = clamp(d / 2.4, 14, 19), vOut = Math.max(12, vIn * 0.82), k = vIn / (vIn + vOut);
+    const M = { x: S.x + (F.x - S.x) * k, y: Math.max(1.2, S.y + (F.y - S.y) * k) }, sg = F.x >= S.x ? 1 : -1; // meeting spot; the sub stands on the bench side of it
+    this.subs = (this.subs || []).filter(p => p.out !== sub && p.inn !== sp); // a player can't be in two of these at once
+    this.subs.push({ ti, out: sp, inn: sub, seatX, S, F, M, sg, Mi: { x: M.x - sg * 1.15, y: M.y }, Mo: { x: M.x + sg * 1.15, y: M.y }, t: c.t, vIn, vOut,
+      a: { s: 0, mv: 0, arr: false }, b: { s: 0, mv: 0, arr: false }, five: -1, inDone: false, outDone: false });
     return seatX;
   }
   netSubAnim(ti, sp, sub) { this.animateSub(ti, sp, sub); }
+  subsBusy() { return (this.subs || []).some(p => !p.inDone); }
+  subLeg(p, inn) { // the stretch each of the pair is on: out to meet, then (after the slap) to the floor spot / the bench
+    if (p.five < 0) return inn ? [p.S, p.Mi] : [p.F, p.Mo];
+    if (p.five > 0) return inn ? [p.Mi, p.Mi] : [p.Mo, p.Mo];
+    return inn ? [p.Mi, p.inn] : [p.Mo, p.S];
+  }
+  subPos(p, inn) {
+    const [A, B] = this.subLeg(p, inn), q = inn ? p.a : p.b, dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy), k = d > 0.01 ? clamp(q.s / d, 0, 1) : 1;
+    return { x: A.x + dx * k, y: A.y + dy * k, rem: d - q.s, dx };
+  }
+  subUpdate(rdt) {
+    if (this.subCall) { this.subCall.t += rdt; if (this.subCall.t > SUB_GO + 0.8 && !this.subsBusy()) this.subCall = null; }
+    if (!this.subs || !this.subs.length) return;
+    // a jog: ease up to speed, ease down over the last few feet
+    const leg = (p, inn, v) => {
+      const [A, B] = this.subLeg(p, inn), q = inn ? p.a : p.b, d = Math.hypot(B.x - A.x, B.y - A.y);
+      q.mv += rdt; q.s = Math.min(d, q.s + v * Math.min(1, 0.3 + q.mv / 0.35) * clamp((d - q.s) / 3 + 0.35, 0.35, 1) * rdt);
+      return q.s >= d - 0.05;
+    };
+    for (const p of this.subs) {
+      p.t += rdt;
+      if (p.t > 10) { p.inDone = p.outDone = true; continue; } // never hold the game up
+      if (p.t < SUB_GO) continue;
+      if (p.five > 0) { // hands slapped: a beat, then on their way
+        p.five -= rdt;
+        if (p.five <= 0) {
+          p.five = 0; p.b = { s: 0, mv: 0.2 }; p.inDone = true;
+          // he's in: from the slap he runs to his man under his own steam (the guest's copy comes from the host)
+          const sp = p.inn; if (!this.netGuest) { sp.x = p.Mi.x; sp.y = p.Mi.y; sp.vx = sp.vy = 0; sp.z = 0; sp.face = p.sg; }
+        }
+        continue;
+      }
+      if (p.five < 0) {
+        if (!p.a.arr) p.a.arr = leg(p, true, p.vIn);
+        if (!p.b.arr) p.b.arr = leg(p, false, p.vOut);
+        if (p.a.arr && p.b.arr) { p.five = 0.34; SFX.clap(); }
+        continue;
+      }
+      if (!p.outDone) p.outDone = leg(p, false, p.vOut);
+    }
+    this.subs = this.subs.filter(p => !(p.inDone && p.outDone));
+  }
+  subLook(p, inn) { // where and how to draw one of the pair
+    if (inn && p.t < SUB_WHISTLE + 0.12) return { x: p.S.x, y: p.S.y, seated: true }; // still on the bench until the whistle
+    const me = this.subPos(p, inn), toward = inn ? p.sg : -p.sg, fr = Math.floor(this.time * 8) % 4;
+    if (p.five > 0) return { x: me.x, y: me.y, pose: 'signal', frame: 0, face: toward };
+    if (p.t < SUB_GO) return { x: me.x, y: me.y, pose: 'stand', frame: 0, face: toward };
+    if (p.five < 0) {
+      const q = inn ? p.a : p.b, o = this.subPos(p, !inn);
+      if (q.arr) return { x: me.x, y: me.y, pose: o.rem < 3 ? 'signal' : 'stand', frame: 0, face: toward }; // waiting, hand up as he arrives
+      return { x: me.x, y: me.y, pose: me.rem > 0.5 ? 'run' : 'stand', frame: fr, face: Math.abs(me.dx) > 0.3 ? Math.sign(me.dx) : toward };
+    }
+    const moving = !(inn ? p.inDone : p.outDone) && me.rem > 0.5;
+    return { x: me.x, y: me.y, pose: moving ? 'run' : 'stand', frame: fr, face: Math.abs(me.dx) > 0.3 ? Math.sign(me.dx) : toward };
+  }
+  subOf(sp) { if (!this.subs) return null; for (const p of this.subs) if (p.inn === sp && !p.inDone) return p; return null; }
   // fixed bench seats (so the rest of the bench doesn't shuffle when someone checks in)
   seatsOf(ti) {
     const tm = this.T[ti];
     if (!tm.seats) { tm.seats = tm.all.filter(s => !tm.on.includes(s)).slice(0, RH.BENCH.seats); while (tm.seats.length < RH.BENCH.seats) tm.seats.push(null); }
     return tm.seats;
   }
-  subWait() { let w = 0; for (const tm of this.T) for (const sp of tm.on) if (sp.enter) w = Math.max(w, sp.enter.dur - sp.enter.t); return w; }
-  // where a player is drawn: subs checking in are shown jogging from the bench to their spot
+  // where a player is drawn: a sub checking in is shown on his way from the bench to his spot
   vis(sp) {
-    const e = sp.enter; if (!e) return sp;
-    const k = clamp(e.t / e.dur, 0, 1), q = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-    return { x: e.fx + (sp.x - e.fx) * q, y: e.fy + (sp.y - e.fy) * q, z: 0, walking: true, face: sp.x >= e.fx ? 1 : -1 };
+    const p = this.subOf(sp); if (!p) return sp;
+    return Object.assign({ z: 0, anim: true }, this.subLook(p, true));
   }
 
   /* ---------- periods ---------- */
@@ -3277,8 +3357,7 @@ class Match {
     this.photoFx = this.photoFx.filter(f => (f.t += rdt) < f.life);
     for (const v of this.vips.concat(this.nearFans)) { if (v.up > 0) v.up -= rdt; if (v.flashT != null && (v.flashT += rdt) > 0.12) v.flashT = null; }
     if (this.ball.state !== 'shot') this.trail = this.trail.filter(p => (p.fade = (p.fade || 0) + rdt) < 0.15);
-    for (const tm of this.T) for (const sp of tm.on) if (sp.enter && (sp.enter.t += rdt) >= sp.enter.dur) sp.enter = null;
-    if (this.walkOff) this.walkOff = this.walkOff.filter(w => (w.t += rdt) < w.dur);
+    this.subUpdate(rdt);
     this.shake = Math.max(0, this.shake - rdt); this.excite = Math.max(0.15 + (this.clutch() ? 0.3 : 0), this.excite - rdt * 0.12);
     SFX.crowdLevel(this.excite);
     for (const p of this.popups) p.t += rdt; this.popups = this.popups.filter(p => p.t < p.life);
@@ -3298,7 +3377,7 @@ class Match {
   simUpdate(dt) {
     switch (this.state) {
       case 'intro': if (this.stateT > 1.4) this.setupTipoff(); this.idlePlayers(dt); break;
-      case 'tipoff': this.updateTip(dt); this.physics(dt); break;
+      case 'tipoff': if (!this.subsBusy()) this.updateTip(dt); this.physics(dt); break;
       case 'qbreak':
         this.idlePlayers(dt);
         if (this.stateT > 2.6) {
@@ -3311,7 +3390,7 @@ class Match {
       case 'ft': this.updateFT(dt); this.physics(dt); this.updateBall(dt); break;
       case 'dead':
         this.deadT -= dt; this.think(dt); this.physics(dt); this.updateBall(dt);
-        if (this.deadT <= 0 && this.pendingAfter) { const f = this.pendingAfter; this.pendingAfter = null; f(); }
+        if (this.deadT <= 0 && this.pendingAfter && !this.subsBusy()) { const f = this.pendingAfter; this.pendingAfter = null; f(); }
         break;
       case 'live':
         this.clock -= dt;
@@ -3343,6 +3422,8 @@ class Match {
   updateRefs(dt) {
     const b = this.ball, dir = this.poss != null ? (this.atk(this.poss) ? 1 : -1) : 1;
     for (const r of this.refs) {
+      const call = this.subCall;
+      if (call && call.ref === r) { r.vx = r.vy = 0; r.frame = 0; r.face = call.tx >= r.x ? 1 : -1; continue; } // stops to whistle the subs in
       let tx, ty;
       if (r.role === 'trail') { tx = clamp(b.x - dir * 14, 8, 86); ty = -1.2; }
       else if (r.role === 'slot') { tx = clamp(b.x - dir * 4, 10, 84); ty = 51.4; }
@@ -3375,7 +3456,7 @@ class Match {
     const f = this.ft; if (!f) return; f.t += dt;
     for (const tm of this.T) for (const sp of tm.on) { sp.tx = sp.x; sp.ty = sp.y; }
     const b = this.ball; const sp = f.sp;
-    if (f.phase === 'wait' && f.t > Math.max(0.9, f.waitFor || 0)) { f.phase = 'ready'; f.t = 0; if (!this.isUser(sp.ti)) { f.phase = 'meter'; f.m = 0; f.aiTarget = 0.89 + gauss() * 0.1; } }
+    if (f.phase === 'wait' && f.t > 0.9 && !this.subsBusy()) { f.phase = 'ready'; f.t = 0; if (!this.isUser(sp.ti)) { f.phase = 'meter'; f.m = 0; f.aiTarget = 0.89 + gauss() * 0.1; } }
     if (f.phase === 'ready' || f.phase === 'wait') { b.x = sp.x + sp.face * 0.8; b.y = sp.y + 0.2; b.z = 0.5 + Math.abs(Math.sin(this.time * 7)) * 2.3; }
     if (f.phase === 'meter') {
       f.m += dt / 0.8; b.x = sp.x + sp.face * 0.4; b.z = 6 + f.m;
@@ -3912,8 +3993,8 @@ class Match {
     this.drawBenches(ctx, sx, camY);
     const objs = [];
     for (const tm of this.T) for (const sp of tm.on) objs.push({ y: this.vis(sp).y, f: () => this.drawPlayer(ctx, sp, sx, sy) });
-    for (const w of this.walkOff || []) { const v = this.walkPos(w); objs.push({ y: v.y, f: () => this.drawWalker(ctx, w, v, sx, sy) }); }
-    for (const r of this.refs) objs.push({ y: r.y, f: () => { const x = sx(r.x); if (x > -20 && x < VW + 20) RH.drawSprite(ctx, { x, y: sy(r.y), facing: r.face, frame: r.frame, pose: Math.hypot(r.vx, r.vy) > 2 ? 'run' : 'stand', skin: r.skin, hair: r.hair, hairStyle: r.hairStyle, jersey: '#ece6d6', trim: PAL.ink, shorts: PAL.ink, pants: '#15161c', shoe: PAL.ink, stripes: true }); } });
+    for (const p of this.subs || []) if (!p.outDone) { const v = this.subLook(p, false); objs.push({ y: v.y, f: () => this.drawWalker(ctx, p, v, sx, sy) }); }
+    for (const r of this.refs) objs.push({ y: r.y, f: () => this.drawRef(ctx, r, sx, sy) });
     for (const p of this.photogs) objs.push({ y: p.y, f: () => { const x = sx(p.x); if (x > -30 && x < VW + 30) RH.drawSprite(ctx, this.photogLook(p, x, sy(p.y))); } });
     const hs = [this.hoopState(0), this.hoopState(1)];
     objs.push({ y: 24.9, f: () => { RH.drawHoopBack(ctx, 0, cam, camY, hs[0]); RH.drawHoopBack(ctx, 1, cam, camY, hs[1]); } });
@@ -3929,8 +4010,8 @@ class Match {
     // shadows
     ctx.fillStyle = 'rgba(40,20,8,0.32)';
     const shadow = (x, y, w) => { ctx.fillRect(x - w, y - 1, w * 2 + 1, 3); ctx.fillRect(x - w - 1, y, w * 2 + 3, 1); };
-    for (const tm of this.T) for (const sp of tm.on) { const v = this.vis(sp); shadow(sx(v.x), sy(v.y), 9); }
-    for (const w of this.walkOff || []) { const v = this.walkPos(w); shadow(sx(v.x), sy(v.y), 9); }
+    for (const tm of this.T) for (const sp of tm.on) { const v = this.vis(sp); if (!v.seated) shadow(sx(v.x), sy(v.y), 9); }
+    for (const p of this.subs || []) if (!p.outDone) { const v = this.subLook(p, false); shadow(sx(v.x), sy(v.y), 9); }
     for (const r of this.refs) shadow(sx(r.x), sy(r.y), 8);
     for (const p of this.photogs) shadow(sx(p.x) + p.face * 4, sy(p.y), 9);
     shadow(sx(b.x), sy(b.y), 3);
@@ -3955,7 +4036,7 @@ class Match {
     // name tag under the controlled player
     if (this.ctrl !== this._tagFor) { this._tagFor = this.ctrl; this._tagT = this.time; }
     if (this.ctrl && this.state !== 'final' && this.state !== 'intro' && this.userSide != null && this.time - this._tagT < 2.2) {
-      const c = this.ctrl, x = sx(c.x), y = sy(c.y) + 16, label = `#${c.p.num} ${c.p.last} ${c.p.pos}`, w = RH.textWidth(label);
+      const c = this.ctrl, cv = this.vis(c), x = sx(cv.x), y = sy(cv.y) + 16, label = `#${c.p.num} ${c.p.last} ${c.p.pos}`, w = RH.textWidth(label);
       ctx.fillStyle = 'rgba(11,16,32,0.72)'; ctx.fillRect(Math.round(x - w / 2) - 3, y - 2, w + 6, 11);
       drawText(ctx, label, x, y, PAL.cream, 1, 'center');
     }
@@ -4025,7 +4106,7 @@ class Match {
       if (v.flashT != null && v.flashT >= 0) this.phoneFlash(ctx, x + (Math.abs(v.x) % 2 > 1 ? 1 : -1) * (up ? 15 : 9), top + (up ? 1 : 10), v.flashT);
     }
     for (const ti of [1, 0]) {
-      const tm = this.T[ti], walking = new Set((this.walkOff || []).map(w => w.sp)), bench = this.seatsOf(ti).map(s => s && !tm.on.includes(s) && !walking.has(s) ? s : null);
+      const tm = this.T[ti], walking = new Set((this.subs || []).filter(p => !p.outDone).map(p => p.out)), bench =this.seatsOf(ti).map(s => s && !tm.on.includes(s) && !walking.has(s) ? s : null);
       const hyped = this.flash[ti] > 0.25 || (this.state === 'final' && tm.score > this.T[1 - ti].score);
       bench.forEach((sp, i) => {
         if (!sp) return;                                                  // empty seat (someone is checking in or walking back)
@@ -4040,10 +4121,44 @@ class Match {
       if (x > -12 && x < VW + 12) RH.drawSprite(ctx, { x, y: yS + 3, facing: Math.cos(this.time * 0.6 + ti * 2) > 0 ? 1 : -1, frame: Math.floor(this.time * 4) % 4, pose: hyped ? 'celebrate' : Math.abs(Math.cos(this.time * 0.6 + ti * 2)) > 0.3 ? 'run' : 'stand', skin: c.skin, hair: c.hair, hairStyle: c.hairStyle, jersey: '#2b2f3d', trim: '#e9e4d6', shorts: '#2b2f3d', pants: '#22252f', sleeves: '#2b2f3d', shoe: PAL.ink, tie: tm.t.c1 });
     }
   }
-  walkPos(w) { const k = clamp(w.t / w.dur, 0, 1), q = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; return { x: w.fx + (w.tx - w.fx) * q, y: w.fy + (w.ty - w.fy) * q }; }
-  drawWalker(ctx, w, v, sx, sy) { // a subbed-out player jogging back to the bench
-    const x = sx(v.x); if (x < -20 || x > VW + 20) return; const tm = this.T[w.ti], sp = w.sp, slow = w.t / w.dur > 0.8;
-    RH.drawSprite(ctx, { x, y: sy(v.y), facing: w.tx >= w.fx ? 1 : -1, frame: Math.floor(this.time * (slow ? 6 : 8)) % 4, pose: slow ? 'stand' : 'run', skin: sp.p.skin, hair: sp.p.hair, hairStyle: sp.p.hairStyle, jersey: tm.col.jersey, trim: tm.col.trim, shorts: tm.col.shorts, num: sp.p.num, tall: sp.tall });
+  drawWalker(ctx, p, v, sx, sy) { // a subbed-out player jogging back to the bench
+    const x = sx(v.x); if (x < -20 || x > VW + 20) return; const tm = this.T[p.ti], sp = p.out;
+    RH.drawSprite(ctx, { x, y: sy(v.y), facing: v.face, frame: v.frame, pose: v.pose, skin: sp.p.skin, hair: sp.p.hair, hairStyle: sp.p.hairStyle, jersey: tm.col.jersey, trim: tm.col.trim, shorts: tm.col.shorts, num: sp.p.num, tall: sp.tall });
+    if (p.five > 0) this.drawFive(ctx, p, sx, sy);
+  }
+  drawFive(ctx, p, sx, sy) { // the slap: a white burst where the two raised hands meet
+    const k = 1 - p.five / 0.34, x = sx(p.M.x), y = sy(p.M.y) - 48, r = 5 + Math.round(k * 8);
+    ctx.globalAlpha = Math.max(0, 1 - k * 0.9); ctx.fillStyle = '#ffffff';
+    if (k < 0.5) { ctx.fillRect(x - 2, y - 2, 5, 5); ctx.fillRect(x - 4, y, 9, 1); ctx.fillRect(x, y - 4, 1, 9); }
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, px = Math.round(x + Math.cos(a) * r), py = Math.round(y + Math.sin(a) * r * 0.8); ctx.fillRect(px, py, i % 2 ? 2 : 3, i % 2 ? 2 : 3); }
+    ctx.fillStyle = PAL.yellow; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4, px = Math.round(x + Math.cos(a) * (r - 2)), py = Math.round(y + Math.sin(a) * (r - 2) * 0.8); ctx.fillRect(px, py, 1, 1); }
+    ctx.globalAlpha = 1;
+  }
+  // a ref; the one calling a sub stops, puts the whistle in, raises his arm, then waves the players in
+  drawRef(ctx, r, sx, sy) {
+    const x = sx(r.x); if (x < -20 || x > VW + 20) return;
+    const c = this.subCall && this.subCall.ref === r ? this.subCall : null, y = sy(r.y);
+    let pose = Math.hypot(r.vx, r.vy) > 2 ? 'run' : 'stand', frame = r.frame, whistle = false;
+    if (c) {
+      if (c.t >= SUB_WHISTLE - 0.08) { pose = 'signal'; whistle = true; frame = c.t < SUB_GO ? 0 : Math.floor((c.t - SUB_GO) / 0.16) % 2; }
+      else pose = 'stand';
+    }
+    const top = RH.drawSprite(ctx, { x, y, facing: r.face, frame, pose, whistle, skin: r.skin, hair: r.hair, hairStyle: r.hairStyle, jersey: '#ece6d6', trim: PAL.ink, shorts: PAL.ink, pants: '#15161c', shoe: PAL.ink, stripes: true });
+    if (!c || c.t < SUB_WHISTLE) return;
+    const f = r.face < 0 ? -1 : 1, mx = x + f * 14, my = y - 28, k = c.t - SUB_WHISTLE;
+    // whistle blasts: little lines fanning out from his mouth (two toots)
+    if (k < 0.65 && !(k > 0.16 && k < 0.24)) { ctx.fillStyle = '#ffffff'; for (const [dx, dy] of [[3, -4], [5, 0], [3, 4]]) { const s = 1 + Math.floor((k * 14) % 2); ctx.fillRect(mx + f * dx + (f < 0 ? -2 : 0), my + dy, 2 + s, 1); } }
+    // waving them in: little white motion ticks beside the hand
+    if (c.t >= SUB_GO && c.t < SUB_GO + 1.4) {
+      const w = Math.floor((c.t - SUB_GO) / 0.16) % 2, hx = x + f * (w ? 8 : 15), hy = y - 46;
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(hx + f * 5 + (f < 0 ? -1 : 0), hy - 1, 1, 4); ctx.fillRect(hx + f * 7 + (f < 0 ? -1 : 0), hy - 3, 1, 3); ctx.fillRect(hx + f * 7 + (f < 0 ? -1 : 0), hy + 3, 1, 2);
+    }
+    // "SUB" tag over his head
+    if (c.t < SUB_GO + 1.4) {
+      const ty = top - 10 - Math.round(Math.min(1, k * 6) * 4), w = RH.textWidth('SUB') + 6;
+      ctx.fillStyle = PAL.ink; ctx.fillRect(Math.round(x - w / 2) - 1, ty - 2, w + 2, 11); ctx.fillStyle = PAL.yellow; ctx.fillRect(Math.round(x - w / 2), ty - 1, w, 9);
+      drawText(ctx, 'SUB', x, ty, PAL.ink, 1, 'center');
+    }
   }
   drawPlayer(ctx, sp, sx, sy) {
     const tm = this.T[sp.ti], v = this.vis(sp), x = sx(v.x), y = sy(v.y) - Math.round((v.z ?? sp.z) * RH.ZS);
@@ -4053,9 +4168,9 @@ class Match {
       ctx.save(); sp.ghost.forEach(g => { ctx.globalAlpha = 0.32 * g.life / 0.16; RH.drawSprite(ctx, Object.assign({ x: sx(g.x), y: sy(g.y), facing: g.face, frame: g.frame, pose: g.pose }, look)); }); ctx.restore();
     }
     const wob = sp.shaken > 0.3 ? Math.round(Math.sin(this.time * 45)) : 0;
-    const fire = (sp.streak || 0) >= ON_FIRE;
+    const fire = (sp.streak || 0) >= ON_FIRE && !v.anim;
     if (fire) this.drawFireRing(ctx, x, sy(v.y), sp, true);
-    const head = RH.drawSprite(ctx, Object.assign(v.walking ? { x, y, facing: v.face, frame: Math.floor(this.time * 9) % 4, pose: 'run' } : { x: x + wob, y, facing: sp.face, frame: sp.frame, pose: sp.pose }, look));
+    const head = RH.drawSprite(ctx, Object.assign(v.anim ? (v.seated ? { x, y, facing: 0, seated: true, pose: 'stand' } : { x, y, facing: v.face, frame: v.frame, pose: v.pose }) : { x: x + wob, y, facing: sp.face, frame: sp.frame, pose: sp.pose }, look));
     if (fire) this.drawFireRing(ctx, x, sy(v.y), sp, false);
     if (sp.fallen > 0) { // dizzy stars
       for (let i = 0; i < 3; i++) { const a = this.time * 6 + i * 2.1, px = Math.round(x + Math.cos(a) * 9), py = Math.round(head + 4 + Math.sin(a) * 3); ctx.fillStyle = PAL.yellow; ctx.fillRect(px - 1, py, 3, 1); ctx.fillRect(px, py - 1, 1, 3); ctx.fillStyle = '#ffffff'; ctx.fillRect(px, py, 1, 1); }
@@ -4364,7 +4479,7 @@ const NET = (() => {
   const MSTATES = ['intro', 'tipoff', 'live', 'dead', 'ft', 'qbreak', 'half', 'final'];
   const BSTATES = ['dead', 'held', 'pass', 'shot', 'loose', 'through', 'tip'];
   const FTPH = ['wait', 'ready', 'meter', 'flight', 'done'];
-  const SOUNDS = ['cheer', 'whistle', 'rim', 'swish', 'steal', 'shook', 'ooh', 'bounce', 'rimTick', 'pass', 'move', 'dunk', 'buzzer', 'block', 'ankles'];
+  const SOUNDS = ['cheer', 'whistle', 'subWhistle', 'rim', 'swish', 'steal', 'shook', 'ooh', 'bounce', 'rimTick', 'pass', 'move', 'dunk', 'buzzer', 'block', 'ankles'];
   const PEERJS = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
   const r1 = v => Math.round(v * 10) / 10;
   const newCode = () => Array.from({ length: 5 }, () => CODE_CH[Math.floor(Math.random() * CODE_CH.length)]).join('');
