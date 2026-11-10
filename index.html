@@ -3362,7 +3362,7 @@ class Match {
     this.pop('DOUBLE TEAM', helper.x, helper.y, 7, PAL.yellow);
   }
   give(sp, offReb) {
-    const b = this.ball; b.state = 'held'; b.owner = sp; b.vx = b.vy = b.vz = 0; b.lastTouch = sp.ti;
+    const b = this.ball; b.state = 'held'; b.owner = sp; b.vx = b.vy = b.vz = 0; b.lastTouch = sp.ti; b.blockKind = null; b.keepFor = null;
     sp.catchT = this.time; sp.aiT = rand(0.15, 0.35);
     this.setPoss(sp.ti, offReb);
     if (this.state === 'live') this.maybeDouble(sp);
@@ -3529,8 +3529,8 @@ class Match {
       if (this.isUser(df.ti)) pb = Math.min(0.65, pb * 1.35 + 0.05); // reward well-timed user blocks
       if (chance(pb)) {
         s.blocked = true; this.stat(df, 'blk'); if (s.fouler) { s.fouler = null; }
-        b.state = 'loose'; const ang = Math.atan2(b.y - df.y, b.x - df.x) + rand(-0.6, 0.6);
-        b.vx = Math.cos(ang) * rand(10, 18); b.vy = Math.sin(ang) * rand(6, 12); b.vz = rand(2, 8); b.lastTouch = df.ti; b.shot = null; b.looseT = 0; b.missFrom = s.ti; this.shotClock = Math.max(this.shotClock, 6);
+        b.state = 'loose'; b.lastTouch = df.ti; b.shot = null; b.looseT = 0; b.missFrom = s.ti; this.shotClock = Math.max(this.shotClock, 6);
+        this.blockBall(s, df);
         this.pop('BLOCKED!', df.x, df.y, 10, PAL.orange, true); SFX.block(); this.bigPlay(1.4, df.x); this.shake = 0.3; this.excite = Math.min(1, this.excite + 0.4);
         if (s.ti !== 0) SFX.cheer(0.9); else SFX.ooh(1.1);
         this.call('block', { sp: df });
@@ -3539,6 +3539,31 @@ class Match {
         return;
       }
     }
+  }
+  /* where a blocked shot goes: swatted into the crowd (the shooting team inbounds it), tipped to the blocker or a
+     teammate (the defense runs), or knocked loose for a scramble. The shooter is still coming down, so he can't
+     simply catch his own blocked shot. */
+  blockBall(s, df) {
+    const b = this.ball, sh = s.sp, hx = HOOPX[s.hoop], strong = this.R(df, 'blk') / 100;
+    sh.stun = Math.max(sh.stun, 0.55); sh.shot = null; sh.noGrabT = this.time + 0.45; df.noGrabT = this.time + 0.35; // neither can just catch it out of the air
+    const ux = sh.x - hx, uy = sh.y - 25, back = Math.atan2(uy, ux || 0.01); // away from the rim, toward where the shot came from
+    const mates = this.T[df.ti].on.filter(t => t !== df && !(t.fallen > 0)).sort((a, c) => Math.hypot(a.x - b.x, a.y - b.y) - Math.hypot(c.x - b.x, c.y - b.y));
+    const r = this._forceBlockR != null ? this._forceBlockR : Math.random(); let ang, spd, vz; // _forceBlockR: test hook
+    b.keepFor = null;
+    if (r < 0.2 + strong * 0.12) { // into the stands
+      b.blockKind = 'stands'; const side = b.y < 25 ? -Math.PI / 2 : Math.PI / 2, base = hx > 47 ? 0 : Math.PI; // nearest sideline, or out over the baseline behind the rim
+      ang = (chance(0.6) ? side : base) + rand(-0.4, 0.4); spd = rand(26, 34); vz = rand(5, 9);
+      df.stun = Math.max(df.stun, 0.3);
+    } else if (r < 0.52 + strong * 0.16) { // kept in play and controlled: tapped to himself or a teammate
+      b.blockKind = 'keep'; const m = mates[0], toMate = m && Math.hypot(m.x - b.x, m.y - b.y) < 22 && chance(0.65);
+      if (toMate) { ang = Math.atan2(m.y - b.y, m.x - b.x) + rand(-0.15, 0.15); spd = clamp(Math.hypot(m.x - b.x, m.y - b.y) * 1.5, 5, 13); vz = rand(2, 4); }
+      else { ang = Math.atan2(df.y - b.y, df.x - b.x) + rand(-0.8, 0.8); spd = rand(1.5, 4); vz = rand(1, 3); } // swatted down to himself
+      b.keepFor = { ti: df.ti, until: this.time + 1.0 }; if (!toMate) df.noGrabT = this.time + 0.2; // let it drop to the floor before he scoops it up
+    } else { // knocked loose: a scramble, mostly back out toward the perimeter or off to the side
+      b.blockKind = 'loose'; ang = back + rand(-1.5, 1.5); spd = rand(9, 15); vz = rand(3, 7);
+      df.stun = Math.max(df.stun, 0.3);
+    }
+    b.vx = Math.cos(ang) * spd; b.vy = Math.sin(ang) * spd * 0.9; b.vz = vz;
   }
   resolveShot() {
     const b = this.ball, s = b.shot;
@@ -4547,27 +4572,30 @@ class Match {
       // out of bounds
       if ((b.x < -0.5 || b.x > 94.5 || b.y < -0.5 || b.y > 50.5) && b.z < 4 && this.state === 'live') {
         const last = b.lastTouch ?? 0; const ti = this.opp(last);
-        this.pop('OUT OF BOUNDS', clamp(b.x, 2, 92), clamp(b.y, 2, 48), 4, PAL.creamD); SFX.whistle();
+        if (b.blockKind === 'stands') { this.pop('INTO THE STANDS!', clamp(b.x, 4, 90), clamp(b.y, 4, 46), 14, PAL.yellow, true); this.excite = Math.min(1, this.excite + 0.2); }
+        else this.pop('OUT OF BOUNDS', clamp(b.x, 2, 92), clamp(b.y, 2, 48), 4, PAL.creamD);
+        SFX.whistle(); b.blockKind = null;
         this.setupInbound(ti, clamp(b.x, 3, 91), b.y < 25 ? 0.6 : 49.4, this.nearestOf(ti, b.x, b.y), b.missFrom === ti ? 14 : 24, 1);
         return;
       }
       // claim
       if (b.looseT > 0.08 && b.z < 12) {
-        let best = null, bw = 0;
+        let best = null, bw = 0; const hot = Math.hypot(b.vx, b.vy) > 15; // a ball swatted hard flies past most hands
         for (const tm of this.T) for (const sp of tm.on) {
-          if (sp.stun > 0.25) continue;
+          if (sp.stun > 0.25 || sp.noGrabT > this.time || (hot && Math.random() > 0.03)) continue;
           const dd = Math.hypot(sp.x - b.x, sp.y - b.y);
           const reach = 1.5 + this.R(sp, 'reb') * 0.007 + (sp.z > 0.2 ? 0.7 : 0) + sp.tall * 0.08;
           const rz = 8 + sp.z * 1.2 + sp.tall * 0.3;
           if (dd > reach || b.z > rz) continue;
           let w = Math.pow(this.R(sp, 'reb'), 2) / (dd + 0.4) * (sp.z > 0.2 ? 1.7 : 1) * (this.isCtrl(sp) && sp.userJumpT && this.time - sp.userJumpT < 0.7 ? 1.6 : 1);
           w *= rand(0.6, 1.4);
+          if (b.keepFor && sp.ti === b.keepFor.ti && this.time < b.keepFor.until) w *= 5; // the blocker tapped it to his side
           if (w > bw) { bw = w; best = sp; }
         }
         if (best) {
           const offReb = b.missFrom === best.ti;
           if (b.missFrom != null) { this.stat(best, 'reb'); this.pop(offReb ? 'O-BOARD' : 'REBOUND', best.x, best.y, 9, PAL.creamD); }
-          b.missFrom = null;
+          b.missFrom = null; b.keepFor = null; b.blockKind = null;
           this.give(best, offReb);
         }
       }
