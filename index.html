@@ -784,6 +784,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; font-varian
   #career .tt-ctl { flex-direction: column; gap: 4px; }
   #career .cr-left .cr-name { font-size: 14px; }
 }
+.cr-objs { display: flex; flex-direction: column; gap: 3px; font-size: 13px; } .cr-objs span { display: flex; gap: 6px; align-items: center; } .cr-objs .obj-dot { width: 9px; height: 9px; }
 </style>
 <div id="app">
 <section class="screen" id="title" hidden></section>
@@ -5642,7 +5643,7 @@ function myGame() {
   if (lg.phase === 'ctourn' || lg.phase === 'post') { const g = curBracketGames().find(g => (g.h === lg.myTid || g.a === lg.myTid) && !g.res); return g || null; }
   return null;
 }
-function isRival(g) { if (!g) return false; const lg = C.lg, o = g.h === lg.myTid ? g.a : g.h; return o === lg.rival; }
+function isRival(g) { if (!g) return false; const lg = C.lg, o = g.h === lg.myTid ? g.a : g.h; if (lg.kind === 'pro') { const r = C.rival && lg.players[C.rival.pid]; return !!r && r.tid === o; } return o === lg.rival; }
 function stageLabel() {
   const lg = C.lg;
   if (lg.phase === 'regular') return `${lg.kind === 'hs' ? 'Regular Season' : lg.kind === 'col' ? (lg.week >= lg.schedule.length - 7 ? 'Conference Play' : 'Non-Conference') : 'Regular Season'} · Game ${lg.week + 1}/${lg.schedule.length}`;
@@ -5816,6 +5817,14 @@ function finishMyGame(g, res, perf) {
   const ms = milestoneCheck(b, win, perf);
   // the log
   const opp = lg.teams[myHome ? g.a : g.h];
+  // head-to-head with your pro rival: the team result, and who had the better night
+  let rivalNote = null;
+  if (lg.kind === 'pro' && C.rival && rival) {
+    const rp = lg.players[C.rival.pid], rb = res.box[C.rival.pid];
+    if (win) C.rival.w++; else C.rival.l++;
+    if (rp) C.rival.tid = rp.tid;
+    if (rb) { const mine = b.pts + b.reb + b.ast, his = rb.pts + rb.reb + rb.ast; if (mine > his) { addRep(3); rivalNote = `You outplayed ${C.rival.name}: ${b.pts}/${b.reb}/${b.ast} to his ${rb.pts}/${rb.reb}/${rb.ast}.`; } else rivalNote = `${C.rival.name} got the better of you: ${rb.pts}/${rb.reb}/${rb.ast} to your ${b.pts}/${b.reb}/${b.ast}.`; }
+  }
   const entry = { y: C.year, stage: lvl, w: lg.week, opp: opp.abbr, oppId: opp.id, home: myHome, us, them, win, ot: res.ot || 0, b: Object.assign({}, b), grade, kind: g.kind || null, label: g.kind ? roundName() : null, sim: !!res.sim, rival };
   C.log.push(entry); C.lastGame = entry;
   // recruiting (high school) and draft buzz (college)
@@ -5824,7 +5833,7 @@ function finishMyGame(g, res, perf) {
   simWeekOthers();
   const roleChange = advanceWeek();
   saveC();
-  return { xp, total, pts, trust: [trustBefore, C.trust], rep: rp, milestones: ms, highs: newHighs, recruit: rec, role: roleChange, win, us, them, b, grade };
+  return { xp, total, pts, trust: [trustBefore, C.trust], rep: rp, milestones: ms, highs: newHighs, recruit: rec, role: roleChange, win, us, them, b, grade, rivalNote };
 }
 function gradeLetter(v) { const L = ['F', 'D-', 'D', 'D+', 'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+']; return L[clamp(Math.floor((v - 20) / 6), 0, 12)]; }
 function milestoneCheck(b, win, perf) {
@@ -6184,6 +6193,7 @@ function enterPros() {
   C.year = D.year; C.stage = 'pro'; C.proYear = 0; C.lg = pro; pro.year = C.year; pro.myTid = D.tid; me.tid = D.tid; me.age = Math.max(me.age, 19);
   pro.teams[D.tid].roster.push('ME');
   C.contract = Object.assign(rookieDeal(D.pick), { kind: 'rookie', signed: C.year, tid: D.tid });
+  D.board = (D.picks || []).slice(0, 40).map(pk => ({ n: pk.n, tid: pk.tid, name: pk.pid === 'ME' ? fullName(me) : (pro.players[pk.pid] ? fullName(pro.players[pk.pid]) : '') })); delete D.pro; delete D.picks; D.prospects = null; D.done = true;
   C.repStage = Math.round(C.repStage * 0.2) + (D.pick ? Math.max(0, 34 - D.pick) : 0); C.trust = 42 + (D.pick && D.pick <= 5 ? 10 : 0); C.chem = 50;
   pro.schedule = makeWeeks(pro, stageLen());
   for (const t of pro.teams) lineup(t);
@@ -9176,6 +9186,7 @@ function tabHome() {
     hero = `<div class="cr-hero"><div class="ch-l"><span class="hero-title">${esc(na.label.toUpperCase())}</span><span class="hero-meta">${esc(na.sub)}</span>
       <span class="ch-vs">${cEm(A, 48)}<b>${esc(A.abbr)}</b><i>${na.g.h === lg.myTid ? 'AT' : '@'}</i><b>${esc(H.abbr)}</b>${cEm(H, 48)}</span>
       <span class="hero-meta">${esc(tName(opp))} · ${opp.w}-${opp.l}${rk <= 10 ? ` · #${rk} ranked` : ''}${rival ? ' · <b class="rival">RIVALRY GAME</b>' : ''}</span>
+      <span class="cr-objs">${nextObjectives(na.g).map(o => `<span><i class="obj-dot"></i>${esc(o.label)}</span>`).join('')}</span>
       <span class="row"><button class="btn primary" data-act="clocker">Locker Room ▸</button><button class="btn" data-act="csimgame">Sim Game</button>${lg.phase === 'regular' ? '<button class="btn sm" data-act="csimseason">Sim to Postseason</button>' : ''}</span></div>
       <div class="ch-r"><span class="disp tiny">YOUR ROLE</span><b class="disp">${esc(role.name.toUpperCase())}</b><span class="tiny muted">${esc(role.desc)}</span></div></div>`;
   } else hero = `<div class="cr-hero"><div class="ch-l"><span class="hero-title">${esc(na.label.toUpperCase())}</span><span class="hero-meta">${esc(na.sub)}</span><span class="row"><button class="btn primary" data-act="${na.act}">${esc(na.label)} ▸</button>${na.act === 'ctutorial' ? '<button class="btn sm" data-act="cskiptut">Skip Tutorial</button>' : ''}</span></div></div>`;
@@ -9270,8 +9281,13 @@ function tabRecruit() {
   const rows = list.map(({ col, i, v }) => { const off = R.offers.includes(i), t = { abbr: col[2], icon: col[3], c1: col[4], c2: col[5], shape: 'shield', name: col[1], city: col[0] }; return `<tr class="${R.committed === i ? 'me' : ''}"><td><span class="tm">${cEm(t, 18)} ${esc(col[0])}</span></td><td>${starsHTML(col[6])}</td><td class="tiny">${esc(RH.TRAITS[col[7]][0])}</td><td style="min-width:90px">${meter(v)}</td><td>${R.committed === i ? '<b class="w">COMMITTED</b>' : off ? '<b class="w">OFFER</b>' : R.scouts[i] ? '<b>SCOUTING</b>' : ''}</td><td><button class="btn sm" data-act="ctalk" data-i="${i}">Talk</button>${off && R.committed == null ? ` <button class="btn sm primary" data-act="ccommit" data-i="${i}">Commit</button>` : ''}</td></tr>`; }).join('');
   const scouts = Object.keys(R.scouts).map(i => RH.COLLEGES[i][0]);
   return `<fieldset class="panel"><legend>Recruiting profile</legend><div class="row"><span class="disp" style="font-size:22px">${'★'.repeat(R.stars)}${'☆'.repeat(5 - R.stars)}</span><span class="pill">${rank ? '#' + rank + ' IN THE CLASS' : 'UNRANKED'}</span><span class="pill">${R.offers.length} OFFER${R.offers.length === 1 ? '' : 'S'}</span></div>
-    <p class="tiny" style="margin:8px 0 0">${scouts.length ? `Scouts at your next game: <b>${scouts.map(esc).join(', ')}</b>. Their interest moves twice as much.` : 'No scouts booked for your next game.'} Programs watch your performances, your team's results and how you grow. Offers can arrive from sophomore year on; you can commit early or wait for Signing Day after your senior season.</p></fieldset>
+    <p class="tiny" style="margin:8px 0 0"><b class="disp tiny">SCOUTS' REPORT</b> ${esc(scoutReportC())}</p><p class="tiny" style="margin:8px 0 0">${scouts.length ? `Scouts at your next game: <b>${scouts.map(esc).join(', ')}</b>. Their interest moves twice as much.` : 'No scouts booked for your next game.'} Programs watch your performances, your team's results and how you grow. Offers can arrive from sophomore year on; you can commit early or wait for Signing Day after your senior season.</p></fieldset>
     <fieldset class="panel"><legend>Programs</legend><div class="tbl-wrap"><table class="tbl"><thead><tr><th>SCHOOL</th><th>PRESTIGE</th><th>KNOWN FOR</th><th>INTEREST</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table></div></fieldset>`;
+}
+function scoutReportC() {
+  const c = Cc(), me = c.me, d = me.d, ks = RH.CKEYS.slice().sort((a, b) => d[b] - d[a]), s = me.stats, ppg = s.gp ? s.pts / s.gp : 0;
+  const lvl = me.ovr >= 66 ? 'A high-major talent' : me.ovr >= 58 ? 'A legit Division I prospect' : me.ovr >= 52 ? 'An intriguing prospect who is still raw' : 'A long-term project';
+  return `${lvl} at ${({ PG: 'point guard', SG: 'shooting guard', SF: 'small forward', PF: 'power forward', C: 'center' })[me.pos]} (${hgt(me.hgt)}). Best tools: ${RH.CNAME[ks[0]].toLowerCase()} and ${RH.CNAME[ks[1]].toLowerCase()}. Needs work: ${RH.CNAME[ks[ks.length - 1]].toLowerCase()}. ${s.gp ? `Averaging ${ppg.toFixed(1)} points as a ${RH.roleOf().name.toLowerCase()}.` : 'Has not played a varsity game yet.'} ${c.trust >= 70 ? 'Coaches rave about his coachability.' : c.trust < 35 ? 'Some questions about how he takes coaching.' : ''}`;
 }
 function tabProg() {
   const c = Cc(), me = c.me;
@@ -9294,6 +9310,7 @@ function tabSettings() {
     <fieldset class="panel"><legend>Career</legend><div class="row"><button class="btn" data-act="ctutorial">Replay Tutorial</button><button class="btn" data-act="totitle2">Back to Title</button><button class="btn danger" data-act="cdelete">Delete Career</button></div></fieldset>`;
 }
 
+function nextObjectives(g) { const c = Cc(); if (CUI.objFor !== g || !CUI.objectives) { CUI.objectives = RH.makeObjectives(c.role, c.me.arch, RH.myTeam().coach.style, RH.gameMinutes()); CUI.objFor = g; } return CUI.objectives; }
 /* ---------- locker room (pre-game) ---------- */
 function coachPregame(g) {
   const c = Cc(), lg = c.lg, co = RH.myTeam().coach, opp = lg.teams[g.h === lg.myTid ? g.a : g.h], role = c.role;
@@ -9307,7 +9324,7 @@ function coachPregame(g) {
 function renderLocker() {
   const c = Cc(), lg = c.lg, g = RH.myGame(); if (!g) { renderCareer(); return; }
   const my = RH.myTeam(), H = lg.teams[g.h], A = lg.teams[g.a], opp = g.h === lg.myTid ? A : H, role = RH.roleOf(), L = RH.LEVEL[lg.kind];
-  CUI.objectives = CUI.objFor === g ? CUI.objectives : RH.makeObjectives(c.role, c.me.arch, my.coach.style, RH.gameMinutes()); CUI.objFor = g;
+  nextObjectives(g);
   const oppStar = RH.teamPlayers(opp).sort((a, b) => b.ovr - a.ovr)[0];
   CUI.view = 'locker';
   render('career', `${chdr('LOCKER ROOM')}<div class="scroll bg-dots locker"><div class="wrap">
@@ -9406,7 +9423,7 @@ function renderPost() {
       ${P.perf.objectives.length ? `<div class="list" style="margin-top:10px">${P.perf.objectives.map(x => `<div class="li"><span class="obj-dot ${x.done ? 'done' : ''}"></span><span class="grow tiny">${esc(x.label)}</span><span class="tiny ${x.done ? 'w' : 'muted'}">${x.done ? '+' + x.xp + ' XP' : 'missed'}</span></div>`).join('')}</div>` : ''}</fieldset>
     <fieldset class="panel"><legend>Coach's notes</legend>${fb.good.map(s => `<p class="tiny fb-g">+ ${esc(s)}</p>`).join('')}${fb.bad.map(s => `<p class="tiny fb-b">- ${esc(s)}</p>`).join('')}<p class="tiny" style="margin-top:8px">Coach trust ${trustD >= 0 ? '+' : ''}${trustD.toFixed(1)} → ${Math.round(c.trust)}</p>${o.role ? `<p class="disp tiny" style="color:${o.role.up ? '#7fdc6c' : '#e5533a'}">${o.role.up ? 'ROLE UP' : 'ROLE DOWN'}: ${esc(RH.ROLES[RH.roleIdx(o.role.now)].name.toUpperCase())}</p>` : ''}</fieldset></div>
     <div class="grid2"><fieldset class="panel"><legend>XP earned</legend><div class="list">${o.xp.map(([l, n]) => `<div class="li"><span class="grow tiny">${esc(l)}</span><b class="num">+${n}</b></div>`).join('')}</div><p class="disp" style="margin:8px 0 0">+${o.total} XP${o.pts ? ` · <span style="color:var(--yellow)">+${o.pts} SKILL POINT${o.pts > 1 ? 'S' : ''}</span>` : ''}</p></fieldset>
-    <fieldset class="panel"><legend>Around you</legend>${o.milestones.map(s => `<p class="disp tiny" style="color:var(--yellow)">★ MILESTONE: ${esc(s)}</p>`).join('')}${o.highs.map(k => `<p class="tiny">New ${RH.LEVEL[lg.kind].name.toLowerCase()} high in ${k === 'tpm' ? 'threes' : k}!</p>`).join('')}${o.recruit.map(s => `<p class="tiny">${esc(s)}</p>`).join('')}<p class="tiny muted">${esc(tName(my))} ${my.w}-${my.l} · ${esc(RH.reputationTier())}</p></fieldset></div>
+    <fieldset class="panel"><legend>Around you</legend>${o.milestones.map(s => `<p class="disp tiny" style="color:var(--yellow)">★ MILESTONE: ${esc(s)}</p>`).join('')}${o.highs.map(k => `<p class="tiny">New ${RH.LEVEL[lg.kind].name.toLowerCase()} high in ${k === 'tpm' ? 'threes' : k}!</p>`).join('')}${o.recruit.map(s => `<p class="tiny">${esc(s)}</p>`).join('')}${o.rivalNote ? `<p class="tiny"><b class="rival">RIVALRY</b> ${esc(o.rivalNote)}</p>` : ''}<p class="tiny muted">${esc(tName(my))} ${my.w}-${my.l} · ${esc(RH.reputationTier())}</p></fieldset></div>
     <div class="row end">${P.sim ? '<button class="btn primary" data-act="cpostdone">Continue ▸</button>' : '<button class="btn primary" data-act="cinterview">Post-Game Interview ▸</button>'}</div>
   </div></div>`);
   if (o.win) SFX.levelUp();
