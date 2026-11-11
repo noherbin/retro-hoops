@@ -3533,6 +3533,8 @@ class Match {
     if (this.state === 'live') this.maybeDouble(sp);
   }
   setupInbound(ti, x, y, holder, sc = this.SC, delay = 0.9) {
+    // practice and the tutorial reset the ball themselves: nobody jogs over to inbound it
+    if (this.ext && this.ext.inbound && this.ext.inbound(ti, x, y)) { this.state = 'dead'; this.deadT = 0; this.pendingAfter = null; return; }
     const tm = this.T[ti]; holder = holder || tm.on[0];
     const nSubs = this.autoSubs();
     if (!tm.on.includes(holder) || this.subOf(holder)) holder = tm.on.filter(s => !this.subOf(s)).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] || tm.on[0]; // not a sub still jogging on
@@ -6702,6 +6704,7 @@ class CareerGame {
     m.pop('BALL!', me.x, me.y, 9, PAL.yellow);
     if (this.reqN >= 4) { this.bump(-0.8, 'BALL HOG'); C.chem = clamp(C.chem - 0.3, 0, 100); this.reqN = 0; }
   }
+  inbound(ti, x, y) { return !!(this.o.inbound && this.o.inbound(ti, x, y)); }
   key(k) {
     if (this.o.key && this.o.key(k)) return true;
     if (!this.onCourt() && this.m.lock && !this.simming && (k === 'pass' || k === 'shoot' || k === 'switch')) { this.watch = !this.watch; this.benchMsgT = 0; return true; }
@@ -7032,7 +7035,7 @@ class Practice {
     const home = matchTeam(my, lg, L.boost, { roster: five, starters: five, venue: 'practice', brand: `${my.city} PRACTICE`.toUpperCase() });
     const away = scoutTeam(lg.kind, opts.scoutOvr || Math.round(RH.teamStrength(my) - 6), 5);
     this.cg = new RH.CareerGame({ side: 0, noRotate: true, noPlays: !opts.plays, noGrade: !opts.grade, playP: 1, coachStyle: my.coach.style, firstPlayCD: 999,
-      update: (dt, rdt) => this.update(dt, rdt), drive: (sp, dt) => this.drive(sp, dt), handler: (sp, dt) => this.handler(sp, dt), drawHUD: ctx => this.drawHUD(ctx), onEvent: (a, b, c, d) => this.on(a, b, c, d), key: k => this.key(k),
+      update: (dt, rdt) => this.update(dt, rdt), drive: (sp, dt) => this.drive(sp, dt), handler: (sp, dt) => this.handler(sp, dt), drawHUD: ctx => this.drawHUD(ctx), onEvent: (a, b, c, d) => this.on(a, b, c, d), key: k => this.key(k), inbound: (ti, x, y) => this.inbound(ti, x, y),
       drawFloor: (ctx, sx, sy) => this.drawFloor(ctx, sx, sy), drawWorld: (ctx, sx, sy) => this.drawWorld(ctx, sx, sy),
       onPlayEnd: (out, P) => this.playEnd && this.playEnd(out, P) });
     this.m = new RH.Match({ home, away, userSide: 0, qlen: 10, difficulty: opts.difficulty ?? 0, quiet: true, noBar: true, shotClock: 99, arc: L.arc, ext: this.cg, onEnd: () => {}, onHalftime: mm => mm.resumeFromHalf() });
@@ -7096,6 +7099,7 @@ class Practice {
     return false;
   }
   key(k) { return false; }
+  inbound() { return true; } // after a make or a ball out of bounds, the rep logic hands the ball back to you
   on(type, a, b, c) {
     const k = this.kind, me = this.me;
     if (this.phase !== 'run') return;
@@ -7260,6 +7264,10 @@ class Tutorial extends Practice {
     if ((T.front || T.steal) && sp === this.opp[0]) { const [x, y] = this.Pd(4, 25); sp.tx = sp.x + (x - sp.x) * 0.05; sp.ty = sp.y + (y - sp.y) * 0.05; sp.face = x > sp.x ? 1 : -1; return true; } // a slow, careful dribble at you
     if (T.contest && sp === this.opp[0]) { sp.tx = sp.x; sp.ty = sp.y; if (this.repT > 1.6 && !sp.shot) { m.beginShot(sp, false); sp.shot.aiTarget = 0.95; } return true; }
     return false;
+  }
+  inbound() { // no scout-team player comes to take the ball out: shots are scored by update(), anything else resets the rep
+    const T = this.cur(); if (T && !T.shoot && !T.layup && !(this.wait >= 0) && !(this.retry > 0)) this.retry = 0.8;
+    return true;
   }
   key(k) { const T = this.cur(); if (T && T.steal && k === 'steal' && this.me && this.m.holder() === this.opp[0]) { this.stealTry = true; } return false; }
   on(type, a, b, c) {
