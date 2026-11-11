@@ -789,6 +789,20 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; font-varian
 .hub-lead { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .hub-home { flex: none; }
 .pill.cr-pill { cursor: pointer; background: var(--yellow); color: var(--ink); border-color: var(--yellow); }
+/* career creator: Arizona school picker */
+.cr-azsel { display: flex; gap: 14px; align-items: center; padding: 12px 14px; border: 3px solid var(--tc); background: var(--navy-d); box-shadow: 4px 4px 0 var(--ink); }
+.cr-azsel img { flex: none; }
+.cr-azn { font-size: 18px; letter-spacing: 1px; }
+.cr-azgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.cr-az { display: flex; align-items: center; gap: 10px; text-align: left; border: 3px solid var(--navy-ll); background: var(--navy-d); padding: 6px 10px; cursor: pointer; color: var(--cream); min-width: 0; }
+.cr-az:hover { border-color: var(--cream); }
+.cr-az.on { border-color: var(--orange); background: rgba(224, 122, 46, .14); }
+.cr-az .grow { display: flex; flex-direction: column; min-width: 0; }
+.cr-az b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-az i { font-style: normal; font-size: 11px; color: var(--cream-d, #c9c1a8); }
+.cr-az .starsimg img { width: 10px; height: 10px; }
+.cr-az img.px { flex: none; }
+@media (max-width: 520px) { .cr-azgrid { grid-template-columns: 1fr; } .cr-azsel { padding: 10px; } .cr-azn { font-size: 15px; } }
 </style>
 <div id="app">
 <section class="screen" id="title" hidden></section>
@@ -1902,6 +1916,11 @@ function rasterIcon(team, w, h) {
   };
   const def = ICONS[team.icon || team.abbr]; // career schools borrow one of the league's mascots in their own colours
   if (def) def(P, team);
+  if (team.mono) { // real schools: their initials in the school colour, not a copy of any logo
+    const s = team.mono, f = Math.floor(Math.min(w * 0.84 / textWidth(s, 1), h * 0.62 / 7)), tc = mkCanvas(w, h), tx = tc.getContext('2d');
+    if (f >= 1) drawText(tx, s, Math.round(w / 2), Math.round((h - 7 * f) / 2), '#000', f, 'center'); else drawTiny(tx, s, Math.round(w / 2), Math.round((h - 5) / 2), '#000', 'center');
+    const d = tx.getImageData(0, 0, w, h).data; for (let i = 0; i < w * h; i++) if (d[i * 4 + 3] > 0) g[i] = team.c1;
+  }
   const c = mkCanvas(w, h), x = c.getContext('2d');
   // auto outline: ink around every painted pixel (4-neighbour)
   const filled = i => i >= 0 && g[i] !== null;
@@ -5532,16 +5551,50 @@ function newCareer(o) {
   C.recruit = { interest: {}, offers: [], committed: null, talks: {}, scouts: {}, stars: 1, rank: null };
   COLLEGES.forEach((c, i) => C.recruit.interest[i] = 0);
   assignRole(true);
-  mail('Coach ' + myTeam().coach.name, `Welcome to ${myTeam().city} High`, `Welcome to the ${myTeam().name}, ${me.first}. Varsity spots are earned in this gym, not given. Show me you can defend, move the ball and run our sets, and you will play. First practice is in the gym before the opener.`);
+  mail('Coach ' + myTeam().coach.name, `Welcome to ${myTeam().full || myTeam().city + ' High'}`, `Welcome to the ${myTeam().name}, ${me.first}. Varsity spots are earned in this gym, not given. Show me you can defend, move the ball and run our sets, and you will play. First practice is in the gym before the opener.`);
   saveC();
   return C;
 }
+// Real Arizona high schools (names, mascots and colours from each school's Wikipedia infobox).
+// Crests are plain monograms in the school colours, not the schools' logos. 'tier' is the in-game
+// program strength (5 = powerhouse ... 2 = small school), loosely based on recent results.
+const AZ_SCHOOLS = [
+  { k: 'SUN', city: 'Sunnyslope', name: 'Vikings', full: 'Sunnyslope High', town: 'Phoenix', mono: 'SS', c1: '#2e7d3e', c2: '#f2efe6', style: 'motion', tier: 5 },
+  { k: 'MIL', city: 'Millennium', name: 'Tigers', full: 'Millennium High', town: 'Goodyear', mono: 'M', c1: '#5a2d8c', c2: '#c0c4cc', style: 'drive', tier: 5 },
+  { k: 'SMK', city: "St. Mary's", name: 'Knights', full: "St. Mary's Catholic High", town: 'Phoenix', mono: 'SM', c1: '#145a34', c2: '#f2efe6', style: 'defense', tier: 5, rival: 'BRO' },
+  { k: 'BAS', city: 'Basha', name: 'Bears', full: 'Basha High', town: 'Chandler', mono: 'B', c1: '#1e5a3a', c2: '#c5b358', style: 'three', tier: 5 },
+  { k: 'PER', city: 'Perry', name: 'Pumas', full: 'Perry High', town: 'Gilbert', mono: 'P', c1: '#1c2a4f', c2: '#b0243a', style: 'drive', tier: 4 },
+  { k: 'MES', city: 'Mesa', name: 'Jackrabbits', full: 'Mesa High', town: 'Mesa', mono: 'ME', c1: '#4b2a7a', c2: '#f2c14e', style: 'motion', tier: 4 },
+  { k: 'CHA', city: 'Chandler', name: 'Wolves', full: 'Chandler High', town: 'Chandler', mono: 'C', c1: '#2753a6', c2: '#f2efe6', style: 'drive', tier: 4 },
+  { k: 'BRO', city: 'Brophy', name: 'Broncos', full: 'Brophy College Prep', town: 'Phoenix', mono: 'BP', c1: '#b8202f', c2: '#f2efe6', style: 'motion', tier: 4, rival: 'SMK' },
+  { k: 'PIN', city: 'Pinnacle', name: 'Pioneers', full: 'Pinnacle High', town: 'Phoenix', mono: 'PI', c1: '#1f4f9c', c2: '#f2efe6', style: 'three', tier: 4 },
+  { k: 'HAM', city: 'Hamilton', name: 'Huskies', full: 'Hamilton High', town: 'Chandler', mono: 'H', c1: '#7a1f2e', c2: '#c0c4cc', style: 'defense', tier: 4 },
+  { k: 'DVH', city: 'Desert Vista', name: 'Thunder', full: 'Desert Vista High', town: 'Phoenix', mono: 'DV', c1: '#1c2a4f', c2: '#c5b358', style: 'three', tier: 3 },
+  { k: 'SHM', city: 'Shadow Mountain', name: 'Matadors', full: 'Shadow Mountain High', town: 'Phoenix', mono: 'SH', c1: '#1f2f5c', c2: '#e0b43a', style: 'drive', tier: 4 },
+  { k: 'CAC', city: 'Cactus Shadows', name: 'Falcons', full: 'Cactus Shadows High', town: 'Cave Creek', mono: 'CS', c1: '#1f2f5c', c2: '#a7adb7', style: 'motion', tier: 3 },
+  { k: 'SAG', city: 'Saguaro', name: 'Sabercats', full: 'Saguaro High', town: 'Scottsdale', mono: 'S', c1: '#1b1b1f', c2: '#e0b43a', style: 'defense', tier: 3 },
+  { k: 'CDS', city: 'Corona del Sol', name: 'Aztecs', full: 'Corona del Sol High', town: 'Tempe', mono: 'CD', c1: '#c4581e', c2: '#f4d03f', style: 'three', tier: 3 },
+  { k: 'SAL', city: 'Salpointe', name: 'Lancers', full: 'Salpointe Catholic High', town: 'Tucson', mono: 'SA', c1: '#6e1f2a', c2: '#e0b43a', style: 'motion', tier: 3 },
+  { k: 'VCH', city: 'Valley Christian', name: 'Trojans', full: 'Valley Christian High', town: 'Chandler', mono: 'VC', c1: '#2a5aa8', c2: '#c0c4cc', style: 'three', tier: 3 },
+  { k: 'PXC', city: 'Phoenix Christian', name: 'Cougars', full: 'Phoenix Christian Prep', town: 'Phoenix', mono: 'PC', c1: '#2f7d45', c2: '#f2efe6', style: 'drive', tier: 2 },
+  { k: 'SCA', city: 'Scottsdale Christian', name: 'Eagles', full: 'Scottsdale Christian Academy', town: 'Phoenix', mono: 'SC', c1: '#c0262d', c2: '#1c2a4f', style: 'motion', tier: 2 },
+  { k: 'SPA', city: 'Scottsdale Prep', name: 'Spartans', full: 'Scottsdale Prep Academy', town: 'Scottsdale', mono: 'SP', c1: '#1c2a4f', c2: '#f2efe6', style: 'defense', tier: 2 },
+  { k: 'RSP', city: 'Rancho Solano', name: 'Mustangs', full: 'Rancho Solano Prep', town: 'Scottsdale', mono: 'RS', c1: '#1f4b9c', c2: '#f2c14e', style: 'drive', tier: 2 }
+];
+const AZ_TIER = {
+  5: { name: 'Powerhouse', str: 4.8, exposure: 1.35, desc: 'Deep, experienced roster. Minutes are hard to earn, but scouts are always in the gym.' },
+  4: { name: 'Contender', str: 3.8, exposure: 1.2, desc: 'A strong program. A fair fight for minutes and plenty of attention.' },
+  3: { name: 'Solid Program', str: 2.9, exposure: 1.05, desc: 'Room to earn a role early and grow with the team.' },
+  2: { name: 'Small School', str: 1.5, exposure: 0.9, desc: 'You can play right away, but you will have to carry them to get noticed.' }
+};
 const SCHOOL_CHOICES = [
   { k: 'power', name: 'Powerhouse', str: 5, desc: 'Defending state champs. Loaded with seniors: minutes are scarce, but scouts never miss a game.', exposure: 1.35 },
   { k: 'rising', name: 'Rising Program', str: 3, desc: 'A good team on the way up. A fair shot at minutes and steady attention.', exposure: 1.1 },
   { k: 'underdog', name: 'Underdog', str: 1.2, desc: 'Rebuilding. You can start right away, but you will have to carry them to get noticed.', exposure: 0.85 }
 ];
 function makeHSLeague(choice) {
+  const az = AZ_SCHOOLS.find(s => s.k === choice);
+  if (az) return makeAZLeague(az);
   const sc = SCHOOL_CHOICES.find(s => s.k === choice) || SCHOOL_CHOICES[1];
   const lg = { kind: 'hs', year: C ? C.year : 2026, teams: [], players: {}, schedule: [], week: 0, phase: 'regular', bracket: null, myTid: 0, rankHist: [] };
   const defs = shuffle(HS_SCHOOLS.slice());
@@ -5552,6 +5605,22 @@ function makeHSLeague(choice) {
     for (let k = 0; k < 11; k++) { const yr = k < 3 ? 3 : k < 6 ? 2 : k < 9 ? 1 : 0; const p = genLevelPlayer('hs', { pos: RH.POSITIONS[k % 5], ovr: hsOvr(yr, t.str), age: 14 + yr, tid: i, yr }); lg.players[p.id] = p; t.roster.push(p.id); }
   });
   lg.rival = 1 + randi(0, 10);
+  lg.schedule = makeWeeks(lg, SEASON_LEN.hs[C ? C.settings.seasonLen : 1]);
+  return lg;
+}
+// your school plus eleven other Arizona programs (a real rival comes along when there is one)
+function makeAZLeague(mine) {
+  const lg = { kind: 'hs', year: C ? C.year : 2026, teams: [], players: {}, schedule: [], week: 0, phase: 'regular', bracket: null, myTid: 0, rankHist: [], state: 'AZ' };
+  const rest = shuffle(AZ_SCHOOLS.filter(s => s !== mine)), riv = mine.rival && rest.find(s => s.k === mine.rival);
+  const others = (riv ? [riv] : []).concat(rest.filter(s => s !== riv)).slice(0, 11);
+  [mine].concat(others).forEach((d, i) => {
+    const T = AZ_TIER[d.tier];
+    const t = teamObj(i, { city: d.city, name: d.name, abbr: d.k, icon: 'MONO', c1: d.c1, c2: d.c2, style: d.style, shape: 'shield', str: clamp(T.str + rand(-0.4, 0.4), 0.5, 5) }, 'hs');
+    t.full = d.full; t.mono = d.mono; t.town = d.town; t.brand = 'ARIZONA HIGH SCHOOL'; t.exposure = i === 0 ? T.exposure : 1;
+    lg.teams.push(t);
+    for (let k = 0; k < 11; k++) { const yr = k < 3 ? 3 : k < 6 ? 2 : k < 9 ? 1 : 0; const p = genLevelPlayer('hs', { pos: RH.POSITIONS[k % 5], ovr: hsOvr(yr, t.str), age: 14 + yr, tid: i, yr }); lg.players[p.id] = p; t.roster.push(p.id); }
+  });
+  lg.rival = riv ? 1 : 1 + randi(0, 10);
   lg.schedule = makeWeeks(lg, SEASON_LEN.hs[C ? C.settings.seasonLen : 1]);
   return lg;
 }
@@ -6039,7 +6108,7 @@ function seasonEnd() {
   const awards = cSeasonAwards();
   const rec = `${t.w}-${t.l}`;
   const s = me.stats, line = s.gp ? { gp: s.gp, ppg: s.pts / s.gp, rpg: s.reb / s.gp, apg: s.ast / s.gp } : { gp: 0, ppg: 0, rpg: 0, apg: 0 };
-  C.hist.push({ y: C.year, stage: lg.kind, team: t.abbr, teamName: `${t.city} ${t.name}`, c1: t.c1, rec, role: roleOf().name, stats: Object.assign({}, s), ovr: me.ovr, champ: lg.champion === lg.myTid, awards: awards.filter(a => a.pid === 'ME').map(a => a.name), grade: lg.kind === 'hs' ? CLASS[C.grade] : lg.kind === 'col' ? CLASS[Math.min(3, C.colYear)] : 'Year ' + (C.proYear + 1) });
+  C.hist.push({ y: C.year, stage: lg.kind, team: t.abbr, teamName: `${t.mono ? t.full : t.city} ${t.name}`, c1: t.c1, rec, role: roleOf().name, stats: Object.assign({}, s), ovr: me.ovr, champ: lg.champion === lg.myTid, awards: awards.filter(a => a.pid === 'ME').map(a => a.name), grade: lg.kind === 'hs' ? CLASS[C.grade] : lg.kind === 'col' ? CLASS[Math.min(3, C.colYear)] : 'Year ' + (C.proYear + 1) });
   const growth = offseasonGrowth();
   lg.endData = { awards, growth, line, rec, champ: lg.champion === lg.myTid };
   saveC();
@@ -6252,7 +6321,7 @@ function hasCareer() { try { return !!localStorage.getItem(CAREER_KEY); } catch 
 function wipeCareer() { try { localStorage.removeItem(CAREER_KEY); } catch (e) { } C = null; }
 
 Object.assign(RH, {
-  XP_PER_SP, CATTR, CKEYS, CNAME, ARCHS, HGT_RANGE, C_SKIN, C_HAIR, HAIR_STYLES, BEARDS, BROWS, FACES, EYES, BODIES, GEAR_C, SOCKS, ACCS, SLEEVES, UNDERS, SHORTS, SCHOOL_CHOICES, COLLEGES, CONFS, TRAITS, ROLES, LEVEL, CLASS, COACH_STYLE, INTERVIEW_Q, TALKS,
+  XP_PER_SP, CATTR, CKEYS, CNAME, ARCHS, HGT_RANGE, C_SKIN, C_HAIR, HAIR_STYLES, BEARDS, BROWS, FACES, EYES, BODIES, GEAR_C, SOCKS, ACCS, SLEEVES, UNDERS, SHORTS, SCHOOL_CHOICES, AZ_SCHOOLS, AZ_TIER, COLLEGES, CONFS, TRAITS, ROLES, LEVEL, CLASS, COACH_STYLE, INTERVIEW_Q, TALKS,
   engineRatings, startDetail, baseWeight, defaultLook, buildGear, applyLook, newCareer, myTeam, LP, teamPlayers, teamStrength, lineup, mail, refreshMe, attrCap, attrCost, upgradeAttr, cAddXP, assignRole, roleOf, roleIdx,
   stageLen, myGame, isRival, stageLabel, roundName, curBracketGames, standingsC, rankings, rankOf, pollScore, gameMinutes, simScore, finishMyGame, gradeLetter, simMyGame, simWeekOthers, advanceWeek, finishPostseasonSim, simRegularRest,
   userAliveC, seasonEnd, nextSeasonSameLevel, reputationTier, addRep, pIndex, collegeBar, expectedRole, ensureOffers, talk, commitTo, enterCollege, draftStock, startDraftProcess, workoutResult, interviewAnswer, runDraft, rookieDeal, enterPros,
@@ -9093,10 +9162,11 @@ const CR_STEPS = ['Bio', 'Look', 'Gear', 'Playstyle', 'School'];
 function startCreator(lookOnly) {
   const c = Cc();
   CUI.cr = lookOnly && c ? { step: 1, lookOnly: true, look: Object.assign({}, c.me.look), num: c.me.num, hgt: c.me.hgt, wgt: c.me.wgt, pos: c.me.pos, first: c.me.first, last: c.me.last, arch: c.me.arch }
-    : { step: 0, first: '', last: '', num: randi(0, 55), pos: 'SG', hgt: 76, wgt: RH.baseWeight(76), hand: 'R', arch: null, school: 'rising', look: RH.defaultLook(), settings: { difficulty: 1, qlen: 3, seasonLen: 1 } };
+    : { step: 0, first: '', last: '', num: randi(0, 55), pos: 'SG', hgt: 76, wgt: RH.baseWeight(76), hand: 'R', arch: null, school: 'RSP', look: RH.defaultLook(), settings: { difficulty: 1, qlen: 3, seasonLen: 1 } };
   TT.view = 0; TT.spin = true; renderCreator();
 }
-function crLookSrc() { const r = CUI.cr; if (!r) return null; const L = r.look; return { skin: L.skin, hair: L.hair, hairStyle: L.hairStyle, g: RH.buildGear(L), num: r.num, tall: tallOf(r.hgt), jersey: CUI.cr.lookOnly ? RH.myTeam().c1 : '#c8462b', trim: CUI.cr.lookOnly ? RH.myTeam().c2 : '#f2e8cf' }; }
+function crLookSrc() { const r = CUI.cr; if (!r) return null; const L = r.look; return { skin: L.skin, hair: L.hair, hairStyle: L.hairStyle, g: RH.buildGear(L), num: r.num, tall: tallOf(r.hgt), jersey: CUI.cr.lookOnly ? RH.myTeam().c1 : (crSchool() ? crSchool().c1 : '#c8462b'), trim: CUI.cr.lookOnly ? RH.myTeam().c2 : (crSchool() && RH.lum(crSchool().c2) > 0.4 ? crSchool().c2 : '#f2e8cf') }; }
+function crSchool() { const r = CUI.cr; return r && RH.AZ_SCHOOLS.find(s => s.k === r.school); } // the preview wears your school's colours
 function swatches(k, list, cur, none) { return `<div class="sw-row">${none ? `<button class="sw none ${cur == null ? 'on' : ''}" data-act="crset" data-k="${k}" data-v="" aria-label="None">✕</button>` : ''}${list.map(c => `<button class="sw ${cur === c ? 'on' : ''}" style="--c:${c}" data-act="crset" data-k="${k}" data-v="${c}" aria-label="${c}"></button>`).join('')}</div>`; }
 function opts(k, list, cur, num = true) { return `<div class="seg wrapseg">${list.map((l, i) => { const v = Array.isArray(l) ? l[0] : num ? i : l; const lab = Array.isArray(l) ? l[1] : l; return `<button class="${cur === v ? 'on' : ''}" data-act="crset" data-k="${k}" data-v="${v}" data-n="${num ? 1 : 0}">${esc(String(lab))}</button>`; }).join('')}</div>`; }
 function crField(label, html) { return `<div class="cr-field"><p class="disp tiny">${label}</p>${html}</div>`; }
@@ -9138,7 +9208,13 @@ function renderCreator() {
       return `<button class="cr-arch ${r.arch === k ? 'on' : ''}" data-act="crarch" data-v="${k}"><span class="ca-h"><b>${esc(A.name)}</b>${A.pos.includes(r.pos) ? '<i>FITS ' + r.pos + '</i>' : ''}<em>OVR ${ovr}</em></span><span class="tiny">${esc(A.tag)}</span><span class="ca-attrs">${top.map(([a, v]) => `<span><i>${esc(RH.CNAME[a])}</i><span class="bar"><i style="width:${v}%"></i></span><b>${v}</b></span>`).join('')}</span>${A.spec.length ? `<span class="tiny muted">Develops fastest: ${A.spec.map(a => RH.CNAME[a]).join(', ')}</span>` : ''}</button>`;
     }).join('')}</div><p class="tiny muted" style="margin:0">Your playstyle sets where you start and what is cheapest to improve. It never locks you out: every rating can be raised with skill points.</p>`;
   } else {
-    body = `<div class="cr-schools">${RH.SCHOOL_CHOICES.map(s => `<button class="cr-arch ${r.school === s.k ? 'on' : ''}" data-act="crschool" data-v="${s.k}"><span class="ca-h"><b>${esc(s.name)}</b><em>${starsHTML(s.str)}</em></span><span class="tiny">${esc(s.desc)}</span></button>`).join('')}</div>
+    const AZ = RH.AZ_SCHOOLS, sel = AZ.find(s => s.k === r.school) || AZ[AZ.length - 1], ST = RH.AZ_TIER[sel.tier];
+    const crest = (s, n) => cEm({ abbr: s.k, city: s.city, name: s.name, c1: s.c1, c2: s.c2, mono: s.mono, icon: 'MONO', shape: 'shield' }, n);
+    const order = AZ.slice().sort((a, b) => b.tier - a.tier || a.full.localeCompare(b.full));
+    body = `<div class="cr-azsel" style="--tc:${sel.c1}">${crest(sel, 64)}<div class="grow"><div class="disp cr-azn">${esc(sel.full.toUpperCase())}</div><div class="tiny">${esc(sel.name)} · ${esc(sel.town)}, Arizona</div><div class="row" style="gap:8px;margin-top:4px"><span class="pill">${esc(ST.name.toUpperCase())}</span>${starsHTML(ST.str)}</div><p class="tiny muted" style="margin:6px 0 0">${esc(ST.desc)}</p></div></div>
+      <p class="disp tiny" style="margin:0">PICK YOUR SCHOOL · ARIZONA</p>
+      <div class="cr-azgrid">${order.map(s => `<button class="cr-az ${s === sel ? 'on' : ''}" data-act="crschool" data-v="${s.k}" aria-pressed="${s === sel}">${crest(s, 32)}<span class="grow"><b>${esc(s.full)}</b><i>${esc(s.name)} · ${esc(s.town)}</i></span>${starsHTML(RH.AZ_TIER[s.tier].str)}</button>`).join('')}</div>
+      <p class="tiny muted" style="margin:0">Real Arizona schools. Program strength is an in-game rating; crests are simple monograms in each school's colors.</p>
       <fieldset class="panel"><legend>Career settings</legend><div class="list">
       ${crField('DIFFICULTY', `<div class="seg">${RH.DIFF_NAMES.map((n, i) => `<button class="${r.settings.difficulty === i ? 'on' : ''}" data-act="crst" data-k="difficulty" data-v="${i}">${n}</button>`).join('')}</div>`)}
       ${crField('QUARTER LENGTH', `<div class="seg">${[2, 3, 4, 5].map(q => `<button class="${r.settings.qlen === q ? 'on' : ''}" data-act="crst" data-k="qlen" data-v="${q}">${q} MIN</button>`).join('')}</div>`)}
