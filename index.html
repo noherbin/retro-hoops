@@ -803,6 +803,19 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; font-varian
 .cr-az .starsimg img { width: 10px; height: 10px; }
 .cr-az img.px { flex: none; }
 @media (max-width: 520px) { .cr-azgrid { grid-template-columns: 1fr; } .cr-azsel { padding: 10px; } .cr-azn { font-size: 15px; } }
+/* career slots */
+.cr-slots { display: flex; flex-direction: column; gap: 10px; }
+.cr-slot { position: relative; display: flex; align-items: center; gap: 14px; padding: 18px 14px 12px; border: 3px solid var(--navy-ll); border-left: 10px solid var(--tc); background: var(--navy-d); box-shadow: 4px 4px 0 var(--ink); }
+.cr-slot.on { border-color: var(--orange); border-left-color: var(--tc); }
+.cr-slot.empty { border-style: dashed; border-left: 3px dashed var(--navy-ll); box-shadow: none; opacity: .92; }
+.cs-n { position: absolute; top: -2px; left: 10px; transform: translateY(-50%); background: var(--navy-d); padding: 0 6px; font-family: var(--f-display); font-size: 11px; letter-spacing: 1px; color: var(--cream); }
+.cr-slot.on .cs-n { color: var(--orange); }
+.cs-pt { width: 56px; height: 64px; flex: none; image-rendering: pixelated; background: rgba(0,0,0,.25); border: 2px solid var(--ink); }
+.cs-plus { display: grid; place-items: center; font-family: var(--f-display); font-size: 28px; color: var(--navy-ll); }
+.cs-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cs-name { font-size: 15px; letter-spacing: 1px; }
+.cs-b { display: flex; flex-direction: column; gap: 6px; flex: none; }
+@media (max-width: 560px) { .cr-slot { flex-wrap: wrap; } .cr-slot .cs-info { padding-right: 58px; } .cs-b { flex-direction: row; width: 100%; } .cs-b .btn { flex: 1; } .cr-slot .cr-badge { position: absolute; right: 10px; top: 14px; } }
 </style>
 <div id="app">
 <section class="screen" id="title" hidden></section>
@@ -6310,16 +6323,51 @@ function signContract(o) {
 }
 
 /* ---------- save ---------- */
-function saveC() { if (!C) return false; try { localStorage.setItem(CAREER_KEY, JSON.stringify(C)); return true; } catch (e) { return false; } }
+// Career slots: slot 0 keeps the original key, so a career saved before slots existed becomes slot 1.
+// Each slot also gets a small summary (name, OVR, team, portrait) so the slot list never parses whole saves.
+const CSLOTS = 5;
+let SLOT = 0;
+try { const s = +localStorage.getItem('rh_cslot'); if (s >= 0 && s < CSLOTS) SLOT = s; } catch (e) { }
+function slotKey(i) { return i ? CAREER_KEY + '_s' + i : CAREER_KEY; }
+function metaKey(i) { return 'rh_cmeta_' + i; }
+function getSlot() { return SLOT; }
+function setSlot(i) { if (SLOT !== i) C = null; SLOT = i; try { localStorage.setItem('rh_cslot', String(i)); } catch (e) { } }
+function slotMeta(c) {
+  const me = c.me, t = c.lg && c.lg.teams[c.lg.myTid];
+  let pt = null; try { pt = RH.portraitURL(me, t || null); } catch (e) { }
+  return { first: me.first, last: me.last, num: me.num, pos: me.pos, ovr: me.ovr, arch: me.arch, stage: c.stage, grade: c.grade, colYear: c.colYear, proYear: c.proYear, year: c.year,
+    retired: !!c.retired, team: t ? `${t.full || t.city} ${t.name}` : '', abbr: t ? t.abbr : '', c1: t ? t.c1 : '#2a3a5c', rec: t ? `${t.w}-${t.l}` : '', rings: c.rings || 0, allstar: c.allstar || 0, t: Date.now(), pt };
+}
+function saveC() {
+  if (!C) return false;
+  try { localStorage.setItem(slotKey(SLOT), JSON.stringify(C)); } catch (e) { RH.onSaveFail && RH.onSaveFail(); return false; }
+  try { localStorage.setItem(metaKey(SLOT), JSON.stringify(slotMeta(C))); } catch (e) { }
+  return true;
+}
 function loadC() {
   try {
-    const raw = localStorage.getItem(CAREER_KEY); if (!raw) return null; const c = JSON.parse(raw); if (!c || !c.me || !c.lg) return null;
+    const raw = localStorage.getItem(slotKey(SLOT)); if (!raw) return null; const c = JSON.parse(raw); if (!c || !c.me || !c.lg) return null;
     C = c; if (C.me.look) applyLook(C.me, C.me.look); refreshMe(); return C;
   } catch (e) { return null; }
 }
-function hasCareer() { try { return !!localStorage.getItem(CAREER_KEY); } catch (e) { return false; } }
-function wipeCareer() { try { localStorage.removeItem(CAREER_KEY); } catch (e) { } C = null; }
+function hasCareer(i = SLOT) { try { return !!localStorage.getItem(slotKey(i)); } catch (e) { return false; } }
+function anyCareer() { for (let i = 0; i < CSLOTS; i++) if (hasCareer(i)) return true; return false; }
+function freeSlot() { for (let i = 0; i < CSLOTS; i++) if (!hasCareer(i)) return i; return -1; }
+function wipeCareer(i = SLOT) { try { localStorage.removeItem(slotKey(i)); localStorage.removeItem(metaKey(i)); } catch (e) { } if (i === SLOT) C = null; }
+// the slot list: each slot's summary, or null when it is empty (older saves get a summary built once)
+function listSlots() {
+  const out = [];
+  for (let i = 0; i < CSLOTS; i++) {
+    let m = null;
+    try { const raw = localStorage.getItem(metaKey(i)); if (raw) m = JSON.parse(raw); } catch (e) { }
+    if (!hasCareer(i)) { if (m) try { localStorage.removeItem(metaKey(i)); } catch (e) { } out.push(null); continue; }
+    if (!m) { try { const c = JSON.parse(localStorage.getItem(slotKey(i))); if (c && c.me) { if (c.me.look) applyLook(c.me, c.me.look); m = slotMeta(c); m.t = 0; localStorage.setItem(metaKey(i), JSON.stringify(m)); } } catch (e) { } }
+    out.push(m || { first: 'Saved', last: 'Career', num: 0, pos: '', ovr: 0, stage: 'hs', team: '', t: 0 });
+  }
+  return out;
+}
 
+Object.assign(RH, { CSLOTS, getSlot, setSlot, listSlots, anyCareer, freeSlot });
 Object.assign(RH, {
   XP_PER_SP, CATTR, CKEYS, CNAME, ARCHS, HGT_RANGE, C_SKIN, C_HAIR, HAIR_STYLES, BEARDS, BROWS, FACES, EYES, BODIES, GEAR_C, SOCKS, ACCS, SLEEVES, UNDERS, SHORTS, SCHOOL_CHOICES, AZ_SCHOOLS, AZ_TIER, COLLEGES, CONFS, TRAITS, ROLES, LEVEL, CLASS, COACH_STYLE, INTERVIEW_Q, TALKS,
   engineRatings, startDetail, baseWeight, defaultLook, buildGear, applyLook, newCareer, myTeam, LP, teamPlayers, teamStrength, lineup, mail, refreshMe, attrCap, attrCost, upgradeAttr, cAddXP, assignRole, roleOf, roleIdx,
@@ -9147,15 +9195,46 @@ function ttDraw(cv, L, t, view) {
 function ttHTML(w = 220, h = 300) { return `<div class="tt-wrap"><canvas id="tt" class="px" width="${w}" height="${h}" aria-label="Your player, rotating"></canvas><div class="row tt-ctl"><button class="btn sm" data-act="ttrot" data-d="-1" aria-label="Rotate left">◀</button><button class="btn sm" data-act="ttspin">${TT.spin ? 'STOP' : 'SPIN'}</button><button class="btn sm" data-act="ttrot" data-d="1" aria-label="Rotate right">▶</button></div></div>`; }
 
 /* ---------- entering career mode ---------- */
-function careerEnter() {
-  SFX.init(); closeModal();
+function prepCareer() {
+  SFX.init(); closeModal(); MATCH = null;
   if (S_() && !S_().temp) RH.save(); // leaving a franchise: make sure it is on disk first
   if (!S_() || !S_().temp) RH.createLeague(randi(0, 15), {}, true); // a scratch league for shared settings; never saved
+}
+function careerEnter() {
+  prepCareer();
   setMode('career');
   if (RH.loadC()) { syncSettings(); CUI.tab = 'home'; CUI.view = null; renderCareer(); }
   else startCreator();
 }
 function careerExit() { if (CUI.dn) clearTimeout(CUI.dn.timer); CUI.dn = null; setMode('franchise'); MATCH = null; CUI.view = null; CUI.cr = null; CUI.post = null; if (RH.hasSave()) RH.load(); renderTitle(); }
+
+/* ---------- career slots ---------- */
+function slotStage(m) {
+  if (m.retired) return 'Retired';
+  if (m.stage === 'hs') return `${RH.CLASS[m.grade] || 'Freshman'} · High School`;
+  if (m.stage === 'col') return `${RH.CLASS[Math.min(3, m.colYear || 0)]} · College`;
+  if (m.stage === 'draft') return 'Draft Prospect';
+  return `Year ${(m.proYear || 0) + 1} · Pro`;
+}
+function renderSlots() {
+  prepCareer(); CUI.view = 'slots'; CUI.cr = null; CUI.post = null;
+  const L = RH.listSlots(), cur = RH.getSlot(), used = L.filter(Boolean).length;
+  const cards = L.map((m, i) => m ? `<div class="cr-slot ${i === cur ? 'on' : ''}" style="--tc:${m.c1 || '#2a3a5c'}">
+      <span class="cs-n">SLOT ${i + 1}${i === cur ? ' · LAST PLAYED' : ''}</span>
+      ${m.pt ? `<img class="px cs-pt" alt="" src="${m.pt}">` : '<span class="cs-pt"></span>'}
+      <div class="grow cs-info"><div class="disp cs-name">#${m.num} ${esc((m.first + ' ' + m.last).toUpperCase())} ${m.pos ? posTag(m.pos) : ''}</div>
+        <div class="tiny">${esc(slotStage(m))}${m.year ? ' · ' + m.year : ''}</div>
+        <div class="tiny muted">${esc(m.team)}${m.rec && !m.retired ? ' · ' + m.rec : ''}</div>
+        <div class="tiny muted">${m.t ? 'Saved ' + new Date(m.t).toLocaleDateString() : ''}</div></div>
+      ${m.ovr ? badge(m.ovr) : ''}
+      <div class="cs-b"><button class="btn primary sm" data-act="cslotplay" data-i="${i}">Play ▸</button><button class="btn sm danger" data-act="cslotdel" data-i="${i}">Delete</button></div></div>`
+    : `<div class="cr-slot empty"><span class="cs-n">SLOT ${i + 1}</span><span class="cs-pt cs-plus">+</span>
+      <div class="grow cs-info"><div class="disp cs-name">EMPTY SLOT</div><div class="tiny muted">Create a new player and take him from freshman year to the pros.</div></div>
+      <div class="cs-b"><button class="btn sm" data-act="cslotnew" data-i="${i}">New Career ▸</button></div></div>`).join('');
+  render('career', `${chdr('CAREER SLOTS')}<div class="scroll bg-dots"><div class="wrap">
+    <p class="muted" style="margin:0">${used} of ${RH.CSLOTS} slots used. Each slot is its own player and career, saved separately in this browser.</p>
+    <div class="cr-slots">${cards}</div></div></div>`);
+}
 
 /* ---------- player creator ---------- */
 const CR_STEPS = ['Bio', 'Look', 'Gear', 'Playstyle', 'School'];
@@ -9223,7 +9302,7 @@ function renderCreator() {
   }
   const ok = crValid(step);
   const nav = r.lookOnly ? `<button class="btn" data-act="crlookcancel">Cancel</button><button class="btn primary" data-act="crlooksave">Save Look</button>`
-    : `${step > 0 ? '<button class="btn" data-act="crback">Back</button>' : '<button class="btn" data-act="totitle2">Title</button>'}<button class="btn primary" data-act="crnext" ${ok ? '' : 'disabled'}>${step === 4 ? 'Start Career' : 'Next'}</button>`;
+    : `${step > 0 ? '<button class="btn" data-act="crback">Back</button>' : (RH.anyCareer() ? '<button class="btn" data-act="cslots">Slots</button>' : '<button class="btn" data-act="totitle2">Title</button>')}<button class="btn primary" data-act="crnext" ${ok ? '' : 'disabled'}>${step === 4 ? 'Start Career' : 'Next'}</button>`;
   const stepsBar = r.lookOnly ? `<div class="steps">${['Look', 'Gear'].map((s, i) => `<span class="${r.step === i + 1 ? 'on' : ''}" data-act="crstep" data-v="${i + 1}" role="button" tabindex="0">${s}</span>`).join('')}</div>` : `<div class="steps">${CR_STEPS.map((s, i) => `<span class="${i === step ? 'on' : i < step ? 'done' : ''}">${i + 1} ${s}</span>`).join('')}</div>`;
   render('career', `${chdr(r.lookOnly ? 'EDIT YOUR LOOK' : 'CREATE YOUR PLAYER')}<div class="scroll bg-dots"><div class="wrap">
     ${stepsBar}
@@ -9399,7 +9478,7 @@ function tabSettings() {
       ${crField('SEASON LENGTH (NEXT SEASON)', seg('seasonLen', [0, 1, 2], ['SHORT', 'STANDARD', 'LONG']))}${crField('PRO PLAYOFF SERIES', seg('bestOf', [1, 3, 5], ['ONE GAME', 'BEST OF 3', 'BEST OF 5']))}
       ${crField('SHOT METER', seg('showMeter', [true, false], ['SHOW', 'HIDE']))}${crField('CONTROLS', modeSeg('cmode', ctrlMode(), true))}</div></fieldset>
     <fieldset class="panel"><legend>Sound</legend><div class="list">${crField('SOUND', seg('sound', [true, false], ['ON', 'OFF']))}<div><label class="disp tiny" for="cvol">VOLUME</label><input id="cvol" type="range" min="0" max="1" step="0.05" value="${st.volume}" style="width:100%;accent-color:var(--orange)"></div>${crField('MUSIC', seg('music', [true, false], ['ON', 'OFF']))}${crField('ANNOUNCER', seg('announcer', [true, false], ['ON', 'OFF']))}${crField('CROWD', seg('crowd', [true, false], ['ON', 'OFF']))}</div></fieldset></div>
-    <fieldset class="panel"><legend>Career</legend><div class="row"><button class="btn" data-act="ctutorial">Replay Tutorial</button><button class="btn" data-act="totitle2">Back to Title</button><button class="btn danger" data-act="cdelete">Delete Career</button></div></fieldset>`;
+    <fieldset class="panel"><legend>Career · Slot ${RH.getSlot() + 1}</legend><div class="row"><button class="btn" data-act="ctutorial">Replay Tutorial</button><button class="btn" data-act="cslots">Career Slots</button><button class="btn" data-act="totitle2">Back to Title</button><button class="btn danger" data-act="cdelete">Delete Career</button></div></fieldset>`;
 }
 
 function nextObjectives(g) { const c = Cc(); if (CUI.objFor !== g || !CUI.objectives) { CUI.objectives = RH.makeObjectives(c.role, c.me.arch, RH.myTeam().coach.style, RH.gameMinutes()); CUI.objFor = g; } return CUI.objectives; }
@@ -9695,7 +9774,11 @@ function scrimDone(res, cg) {
 
 /* ---------- actions ---------- */
 Object.assign(ACT, {
-  career: () => { closeModal(); if (MATCH) return; if (RH.hasCareer()) careerEnter(); else { SFX.init(); if (S_() && !S_().temp) RH.save(); if (!S_() || !S_().temp) RH.createLeague(randi(0, 15), {}, true); setMode('career'); startCreator(); } },
+  career: () => { closeModal(); if (MATCH) return; if (RH.anyCareer()) renderSlots(); else { prepCareer(); RH.setSlot(Math.max(0, RH.freeSlot())); setMode('career'); startCreator(); } },
+  cslots: () => { closeModal(); if (MATCH) return; renderSlots(); },
+  cslotplay: el => { RH.setSlot(+el.dataset.i); careerEnter(); },
+  cslotnew: el => { prepCareer(); CUI.view = null; RH.setSlot(+el.dataset.i); setMode('career'); startCreator(); },
+  cslotdel: el => { const i = +el.dataset.i, m = RH.listSlots()[i]; confirmBox(`Delete slot ${i + 1}?`, `This permanently erases ${m ? esc(m.first + ' ' + m.last) + "'s" : 'this'} career from this browser.`, 'Delete', () => { RH.wipeCareer(i); renderSlots(); }, true); },
   totitle2: () => careerExit(),
   cmenu: () => { closeModal(); if (MATCH) return; careerExit(); },
   chome: () => { closeModal(); if (MATCH) return; if (!Cc()) { careerExit(); return; } if (CUI.cr && !Cc().me) return; CUI.tab = 'home'; renderCareer(); },
@@ -9715,7 +9798,7 @@ Object.assign(ACT, {
     const r = CUI.cr; if (!crValid(r.step)) return;
     if (r.step < 4) { r.step++; renderCreator(); return; }
     const go = () => { RH.newCareer({ first: r.first.trim(), last: r.last.trim(), num: r.num, pos: r.pos, hgt: r.hgt, wgt: r.wgt, hand: r.hand, arch: r.arch, look: r.look, school: r.school, settings: Object.assign({ controls: ctrlPref() }, r.settings) }); CUI.cr = null; syncSettings(); SFX.jingle(); CUI.tab = 'home'; renderCareer(); const t = RH.myTeam(); modal(`<h3>WELCOME TO ${esc(t.full.toUpperCase())}</h3>${coachSays(`You made the team, ${Cc().me.first}. You will start on the bench like every freshman. Earn my trust and the minutes come. First, practice.`)}<div class="row end"><button class="btn primary" data-act="close">Let's Work</button></div>`, 'sm'); };
-    if (RH.hasCareer()) confirmBox('Replace your career?', 'Starting a new career deletes the one you have saved.', 'Start Over', go, true); else go();
+    if (RH.hasCareer()) confirmBox('Replace this slot?', `Slot ${RH.getSlot() + 1} already has a career. Starting a new one deletes it.`, 'Start Over', go, true); else go();
   },
   crlookcancel: () => { CUI.cr = null; CUI.tab = 'player'; renderCareer(); },
   crlooksave: () => { const c = Cc(); RH.applyLook(c.me, CUI.cr.look); RH.saveC(); CUI.cr = null; CUI.tab = 'player'; toast('Look saved.'); renderCareer(); },
@@ -9751,7 +9834,7 @@ Object.assign(ACT, {
   cscrim: () => runScrimmage(),
   csetopt: el => { const st = Cc().settings; let v = el.dataset.v; v = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v; st[el.dataset.k] = v; RH.saveC(); syncSettings(); renderCareer(); },
   cmode: el => { Cc().settings.controls = el.dataset.v; setControls(el.dataset.v); RH.saveC(); renderCareer(); },
-  cdelete: () => confirmBox('Delete your career?', 'This permanently erases your player and career from this browser.', 'Delete', () => { RH.wipeCareer(); careerExit(); }, true),
+  cdelete: () => confirmBox('Delete this career?', `This permanently erases slot ${RH.getSlot() + 1} (your player and career) from this browser.`, 'Delete', () => { RH.wipeCareer(); renderSlots(); }, true),
   // season transitions
   cnextyear: () => { RH.advanceYear(); CUI.season = null; SFX.jingle(); const c = Cc(); toast(c.stage === 'hs' ? `${RH.CLASS[c.grade]} year!` : `The ${c.year} season`); CUI.tab = 'home'; renderCareer(); const r = RH.roleOf(); modal(`<h3>NEW SEASON</h3>${coachSays(`New year, ${c.me.first}. You will start the season as ${r.name.toLowerCase()}. ${r.k === 'star' || r.k === 'starter' ? 'You earned it.' : 'Earn more.'}`)}<div class="row end"><button class="btn primary" data-act="close">Let's Go</button></div>`, 'sm'); },
   csigning: () => renderSigning(),
@@ -9769,7 +9852,7 @@ Object.assign(ACT, {
   cfasign: el => { const o = CUI.fa.offers[+el.dataset.i]; RH.signContract(o); Cc().contract.fresh = true; CUI.fa = null; ACT.cnextyear(); },
   cretire: () => confirmBox('Retire?', 'Hang up the sneakers and see your legacy. This ends your career.', 'Retire', () => { const c = Cc(); c.retired = true; RH.saveC(); renderRetired(); }, true),
   cretired: () => renderRetired(),
-  cnewcareer: () => confirmBox('Start a new career?', 'This deletes your current career.', 'New Career', () => { RH.wipeCareer(); startCreator(); }, true)
+  cnewcareer: () => renderSlots()
 });
 
 /* ---------- title screen entry ---------- */
@@ -9777,11 +9860,12 @@ const _renderTitle = renderTitle;
 renderTitle = function () { // eslint-disable-line no-func-assign
   _renderTitle();
   const row = document.querySelector('#title .title-box .row'); if (!row) return;
-  const b = document.createElement('button'); b.className = 'btn ' + (RH.hasCareer() ? 'primary' : ''); b.dataset.act = 'career'; b.textContent = RH.hasCareer() ? 'Continue Career' : 'Career Mode';
+  const b = document.createElement('button'); b.className = 'btn ' + (RH.anyCareer() ? 'primary' : ''); b.dataset.act = 'career'; b.textContent = RH.anyCareer() ? 'Career Slots' : 'Career Mode';
   row.insertBefore(b, row.firstChild);
   const p = document.querySelector('#title .title-box p.muted'); if (p) p.textContent = 'Five-on-five pixel basketball. Run a franchise, play friends online, or build one player from freshman year to the pros.';
 };
-RH.careerEnter = careerEnter; RH.CUI = CUI;
+RH.careerEnter = careerEnter; RH.CUI = CUI; RH.renderSlots = renderSlots;
+{ let last = 0; RH.onSaveFail = () => { if (Date.now() - last > 15000) { last = Date.now(); toast('Browser storage is full. Delete an old career slot to keep saving.', true); } }; }
 
 RH.boot();
 </script>
