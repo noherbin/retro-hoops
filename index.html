@@ -1914,6 +1914,155 @@ const ICONS = {
     P.rect(22, 63, 3, 3, P.ink);
   }
 };
+/* ---------- mascot crests for the Arizona high schools ----------
+   Original drawings of each mascot in the school's colours (generic animals, helmets and symbols;
+   not the schools' own logos). Same 0-100 canvas and auto-outline as the league crests above. */
+const AZ_CREAM = '#f4efe2', AZ_STEEL = '#aeb7c2', AZ_GOLD = '#f2c14e';
+function azMirror(P, pts, col) { P.poly(pts, col); P.poly(P.mx(pts), col); }
+function azCat(P, c, o = {}) { // big-cat head, front view
+  const fur = o.fur || c.c1, dark = shade(fur, -0.4), lite = o.muzzle || AZ_CREAM;
+  azMirror(P, [[20, 36], [16, 8], [42, 22]], fur); azMirror(P, [[23, 30], [21, 15], [35, 23]], o.inner || shade(fur, 0.35));
+  azMirror(P, [[20, 50], [6, 60], [18, 64], [10, 74], [28, 72]], fur); // cheek ruff
+  P.ell(50, 50, 31, 29, fur);
+  if (o.stripes) { for (const s of [1, -1]) { const X = x => s > 0 ? x : 100 - x; P.poly([[X(22), 50], [X(34), 54], [X(22), 56]], dark); P.poly([[X(24), 62], [X(36), 63], [X(26), 67]], dark); } P.poly([[44, 22], [50, 36], [56, 22]], dark); P.poly([[34, 26], [42, 33], [38, 24]], dark); P.poly([[66, 26], [58, 33], [62, 24]], dark); }
+  P.ell(41, 67, 11, 9, lite); P.ell(59, 67, 11, 9, lite); P.ell(50, 75, 10, 7, lite);
+  if (o.tear) { P.line(36, 50, 40, 62, 2.5, dark); P.line(64, 50, 60, 62, 2.5, dark); }
+  azMirror(P, [[28, 43], [37, 39], [44, 45], [36, 48]], o.eye || AZ_GOLD); P.rect(35, 41, 3, 6, P.ink); P.rect(62, 41, 3, 6, P.ink);
+  azMirror(P, [[26, 39], [38, 35], [45, 41], [38, 38]], dark);
+  P.poly([[43, 56], [57, 56], [50, 63]], o.nose || P.ink);
+  P.line(50, 62, 50, 68, 2, P.ink); P.line(50, 68, 43, 72, 2, P.ink); P.line(50, 68, 57, 72, 2, P.ink);
+  if (o.fangs) { P.poly([[38, 74], [62, 74], [58, 84], [42, 84]], P.ink); azMirror(P, [[40, 74], [46, 74], [44, o.fangs]], AZ_CREAM); }
+}
+function azHorse(P, head, mane, flip, ox, oy, s, blaze) { // horse head in profile (faces left unless flipped)
+  const T = pts => pts.map(([x, y]) => [ox + (flip ? 100 - x : x) * s, oy + y * s]), Q = (x, y) => T([[x, y]])[0];
+  P.poly(T([[68, 10], [78, 6], [76, 18], [92, 26], [84, 32], [98, 42], [88, 48], [98, 60], [88, 66], [96, 80], [88, 84], [94, 98], [84, 98], [82, 50], [72, 22]]), mane);
+  P.poly(T([[56, 18], [60, 0], [70, 14]]), head);
+  P.poly(T([[58, 14], [46, 22], [20, 56], [10, 66], [12, 76], [22, 80], [34, 76], [46, 72], [56, 76], [62, 98], [88, 98], [84, 50], [76, 22], [68, 12]]), head);
+  P.ell(...Q(48, 58), 16 * s, 14 * s, head); P.ell(...Q(16, 70), 10 * s, 9 * s, head);
+  P.ring(...Q(48, 58), 10 * s, 13 * s, (flip ? -40 : 40) * D2R, (flip ? 60 : 140) * D2R, shade(head, -0.25));
+  P.poly(T([[58, 14], [66, 6], [62, 24], [52, 22]]), mane);
+  if (blaze) P.poly(T([[50, 24], [45, 28], [17, 62], [13, 59]]), blaze);
+  P.ell(...Q(44, 36), 3.5 * s, 3 * s, P.ink); P.ell(...Q(12, 68), 2.2 * s, 3 * s, P.ink); P.line(...Q(8, 78), ...Q(22, 78), 2 * s, P.ink);
+}
+function azCanine(P, c, o = {}) { // wolf / husky head, front view
+  const fur = c.c1, dark = shade(fur, -0.4);
+  azMirror(P, [[20, 38], [22, 4], [44, 24]], fur); azMirror(P, [[24, 30], [25, 13], [36, 25]], o.inner || shade(fur, 0.35));
+  azMirror(P, [[16, 50], [4, 58], [16, 62], [8, 70], [26, 68]], fur);
+  P.poly([[22, 30], [50, 22], [78, 30], [86, 52], [70, 68], [60, 88], [50, 92], [40, 88], [30, 68], [14, 52]], fur);
+  if (o.mask) P.poly([[26, 50], [38, 42], [46, 48], [50, 58], [54, 48], [62, 42], [74, 50], [72, 64], [62, 72], [58, 88], [50, 92], [42, 88], [38, 72], [28, 64]], AZ_CREAM);
+  else P.poly([[38, 60], [50, 56], [62, 60], [58, 86], [50, 92], [42, 86]], AZ_CREAM);
+  azMirror(P, [[30, 46], [40, 42], [45, 48], [37, 50]], o.eye || AZ_GOLD); P.rect(37, 44, 3, 5, P.ink); P.rect(60, 44, 3, 5, P.ink);
+  azMirror(P, [[28, 42], [40, 37], [46, 44], [40, 40]], dark);
+  P.ell(50, 82, 6, 4.5, P.ink); P.line(50, 86, 50, 90, 2, P.ink);
+}
+Object.assign(ICONS, {
+  AZ_MUSTANG(P, c) { azHorse(P, c.c1, c.c2, false, 0, 0, 1, AZ_CREAM); },
+  AZ_BRONCO(P, c) { // horseshoe around a horse head
+    P.ring(50, 52, 34, 46, -55 * D2R, 235 * D2R, c.c1);
+    for (const a of [-20, 20, 60, 120, 160, 200]) P.ell(50 + Math.cos(a * D2R) * 40, 52 + Math.sin(a * D2R) * 40, 2.4, 2.4, AZ_CREAM);
+    azHorse(P, shade(c.c1, -0.3), shade(c.c1, -0.55), true, 17, 16, 0.66, AZ_CREAM);
+  },
+  AZ_VIKING(P, c) { // horned helmet over a braided beard
+    azMirror(P, [[24, 44], [10, 34], [2, 12], [12, 20], [18, 30], [28, 36]], AZ_CREAM);
+    P.at((u, v) => ((u - 50) / 28) ** 2 + ((v - 46) / 28) ** 2 <= 1 && v <= 48, AZ_STEEL);
+    P.poly([[48, 18], [52, 18], [53, 46], [47, 46]], shade(AZ_STEEL, 0.4));
+    P.rect(22, 42, 56, 9, c.c1); for (const x of [28, 39, 61, 72]) P.rect(x - 1.5, 45, 3, 3, AZ_CREAM);
+    P.rect(28, 51, 44, 12, '#e0a878'); P.rect(35, 54, 5, 4, P.ink); P.rect(60, 54, 5, 4, P.ink);
+    P.rect(46, 50, 8, 18, AZ_STEEL);
+    P.poly([[26, 60], [40, 64], [50, 62], [60, 64], [74, 60], [70, 82], [60, 94], [50, 86], [40, 94], [30, 82]], '#b8743a');
+    P.line(42, 70, 42, 88, 2, shade('#b8743a', -0.3)); P.line(58, 70, 58, 88, 2, shade('#b8743a', -0.3));
+  },
+  AZ_KNIGHT(P, c) { // great helm with a plume and a cross
+    P.poly([[44, 18], [36, 2], [50, 9], [62, 0], [60, 18]], c.c1);
+    P.poly([[24, 28], [30, 16], [70, 16], [76, 28], [78, 86], [50, 96], [22, 86]], AZ_STEEL);
+    P.poly([[50, 16], [70, 16], [76, 28], [78, 86], [50, 96]], shade(AZ_STEEL, -0.12));
+    P.rect(25, 40, 50, 6, P.ink);
+    P.rect(46, 52, 8, 32, c.c1); P.rect(34, 60, 32, 7, c.c1);
+  },
+  AZ_SPARTAN(P, c) { // crested helmet, front view
+    P.poly([[28, 24], [34, 4], [50, 0], [66, 4], [72, 24], [60, 18], [50, 16], [40, 18]], shade(c.c1, 0.5));
+    for (const x of [38, 44, 50, 56, 62]) P.line(x, 4, x, 18, 1.5, shade(c.c1, 0.2));
+    P.poly([[22, 40], [30, 22], [50, 16], [70, 22], [78, 40], [78, 82], [62, 94], [58, 94], [58, 62], [42, 62], [42, 94], [38, 94], [22, 82]], c.c1);
+    P.poly([[50, 16], [70, 22], [78, 40], [78, 82], [62, 94], [58, 94], [58, 62], [50, 62]], shade(c.c1, -0.25));
+    P.poly([[28, 44], [46, 42], [50, 46], [54, 42], [72, 44], [70, 52], [56, 54], [55, 92], [45, 92], [44, 54], [30, 52]], P.ink);
+    P.line(50, 18, 50, 40, 3, shade(c.c1, 0.35));
+  },
+  AZ_TROJAN(P, c) { // crested helmet in profile
+    P.ring(54, 48, 28, 44, -175 * D2R, -15 * D2R, c.c1);
+    for (let a = -165; a <= -25; a += 14) P.line(54 + Math.cos(a * D2R) * 30, 48 + Math.sin(a * D2R) * 30, 54 + Math.cos(a * D2R) * 42, 48 + Math.sin(a * D2R) * 42, 1.6, shade(c.c1, -0.3));
+    P.poly([[14, 58], [18, 40], [32, 28], [54, 24], [74, 30], [86, 46], [86, 66], [78, 72], [80, 92], [62, 96], [54, 80], [44, 74], [30, 72], [26, 62]], c.c2);
+    P.poly([[54, 24], [74, 30], [86, 46], [86, 66], [78, 72], [80, 92], [62, 96], [62, 40]], shade(c.c2, -0.18));
+    P.poly([[14, 58], [26, 60], [30, 72], [44, 74], [46, 88], [34, 92], [20, 80]], P.ink);
+    P.line(22, 50, 60, 50, 3, c.c1);
+  },
+  AZ_LANCER(P, c) { // crossed lances behind a shield
+    for (const s of [1, -1]) { const X = x => s > 0 ? x : 100 - x; P.line(X(12), 96, X(84), 10, 4.5, '#8a5a2a'); P.poly([[X(84), 10], [X(92), 0], [X(78), 8]], AZ_STEEL); P.poly([[X(74), 22], [X(94), 24], [X(82), 32], [X(68), 30]], c.c2); }
+    P.poly([[28, 28], [72, 28], [72, 58], [50, 88], [28, 58]], c.c1);
+    P.poly([[34, 50], [50, 38], [66, 50], [66, 58], [50, 46], [34, 58]], c.c2);
+  },
+  AZ_AZTEC(P, c) { // sun disc with a stepped pyramid
+    for (let i = 0; i < 12; i++) { const a = i * 30 * D2R, b = 0.17; P.poly([[50 + Math.cos(a - b) * 30, 50 + Math.sin(a - b) * 30], [50 + Math.cos(a) * 48, 50 + Math.sin(a) * 48], [50 + Math.cos(a + b) * 30, 50 + Math.sin(a + b) * 30]], c.c1); }
+    P.ell(50, 50, 32, 32, c.c2); P.ring(50, 50, 26, 30, 0, 6.3, c.c1);
+    P.rect(30, 62, 40, 8, c.c1); P.rect(36, 54, 28, 8, c.c1); P.rect(42, 46, 16, 8, c.c1); P.rect(46, 36, 8, 10, shade(c.c1, -0.3));
+    P.rect(48, 54, 4, 16, shade(c.c1, 0.3));
+  },
+  AZ_MATADOR(P, c) { // montera hat over a sweeping cape
+    P.line(8, 98, 90, 30, 3.5, AZ_STEEL);
+    P.poly([[14, 46], [86, 46], [92, 60], [84, 70], [90, 82], [76, 80], [70, 94], [58, 84], [46, 96], [36, 84], [22, 92], [20, 78], [8, 74], [14, 62]], c.c2);
+    for (const x of [32, 50, 68]) P.line(x, 50, x - 4, 86, 3, shade(c.c2, -0.28));
+    P.rect(14, 44, 72, 6, c.c1);
+    P.ell(36, 26, 15, 15, c.c1); P.ell(64, 26, 15, 15, c.c1); P.rect(22, 26, 56, 14, c.c1);
+    P.rect(20, 36, 60, 5, c.c2); P.ell(14, 36, 6, 6, c.c2); P.ell(86, 36, 6, 6, c.c2); P.ell(50, 20, 4, 4, shade(c.c1, 0.35));
+  },
+  AZ_PIONEER(P, c) { // covered wagon
+    P.poly([[16, 60], [16, 34], [26, 22], [38, 32], [50, 22], [62, 32], [74, 22], [86, 34], [86, 60]], AZ_CREAM);
+    for (const x of [38, 62]) P.line(x, 32, x, 60, 2, shade(AZ_CREAM, -0.25));
+    P.rect(10, 58, 82, 14, c.c1); P.rect(10, 58, 82, 3, shade(c.c1, 0.3)); P.line(92, 66, 99, 74, 3, '#8a5a2a');
+    for (const x of [28, 74]) { P.ring(x, 80, 8, 13, 0, 6.3, '#6b4423'); P.line(x - 11, 80, x + 11, 80, 2, '#6b4423'); P.line(x, 69, x, 91, 2, '#6b4423'); P.ell(x, 80, 3, 3, P.ink); }
+  },
+  AZ_THUNDER(P, c) { // storm cloud and lightning
+    P.ell(32, 42, 18, 15, c.c1); P.ell(56, 32, 22, 19, c.c1); P.ell(74, 46, 16, 13, c.c1); P.rect(18, 42, 66, 16, c.c1); P.ell(46, 54, 30, 8, c.c1);
+    P.ell(50, 30, 12, 8, shade(c.c1, 0.3));
+    P.poly([[54, 44], [36, 74], [50, 74], [40, 99], [72, 62], [57, 62], [68, 44]], c.c2);
+  },
+  AZ_FALCON(P, c) { // falcon head in profile
+    P.poly([[30, 30], [48, 14], [72, 14], [88, 28], [94, 52], [86, 72], [96, 96], [60, 96], [52, 80], [40, 70], [26, 62], [22, 46]], c.c1);
+    P.ell(56, 60, 14, 12, c.c2);
+    P.poly([[38, 46], [48, 46], [48, 72], [38, 64]], shade(c.c1, -0.35));
+    P.poly([[26, 40], [10, 44], [4, 58], [12, 54], [16, 62], [28, 62]], AZ_GOLD); P.poly([[4, 58], [8, 52], [12, 54]], P.ink);
+    P.ell(40, 38, 6, 6, AZ_GOLD); P.ell(40, 38, 3, 3, P.ink);
+    P.poly([[72, 14], [88, 28], [98, 22], [90, 36]], shade(c.c1, -0.2));
+  },
+  AZ_EAGLE(P, c) { // eagle, wings spread
+    azMirror(P, [[44, 46], [24, 30], [2, 24], [12, 36], [2, 44], [16, 50], [6, 58], [22, 60], [14, 68], [32, 66], [44, 62]], c.c1);
+    for (const s of [1, -1]) { const X = x => s > 0 ? x : 100 - x; P.line(X(14), 38, X(34), 44, 2, shade(c.c1, -0.3)); P.line(X(14), 52, X(34), 54, 2, shade(c.c1, -0.3)); }
+    P.poly([[42, 78], [34, 96], [50, 90], [66, 96], [58, 78]], c.c2);
+    P.ell(50, 62, 12, 20, c.c2);
+    P.ell(50, 32, 12, 13, AZ_CREAM);
+    P.poly([[45, 38], [55, 38], [53, 48], [50, 50], [47, 48]], AZ_GOLD);
+    P.rect(43, 29, 3, 3, P.ink); P.rect(54, 29, 3, 3, P.ink); P.line(41, 27, 47, 29, 2, P.ink); P.line(59, 27, 53, 29, 2, P.ink);
+  },
+  AZ_BEAR(P, c) {
+    P.ell(24, 26, 12, 12, c.c1); P.ell(76, 26, 12, 12, c.c1); P.ell(24, 26, 6, 6, shade(c.c1, 0.35)); P.ell(76, 26, 6, 6, shade(c.c1, 0.35));
+    P.ell(50, 52, 33, 31, c.c1);
+    P.ell(50, 68, 16, 13, c.c2); P.ell(50, 61, 7, 5, P.ink); P.line(50, 66, 50, 72, 2, P.ink); P.line(50, 72, 44, 75, 2, P.ink); P.line(50, 72, 56, 75, 2, P.ink);
+    P.ell(37, 46, 3.5, 3.5, P.ink); P.ell(63, 46, 3.5, 3.5, P.ink); P.line(31, 40, 41, 42, 2.5, shade(c.c1, -0.4)); P.line(69, 40, 59, 42, 2.5, shade(c.c1, -0.4));
+  },
+  AZ_JACKRABBIT(P, c) {
+    azMirror(P, [[30, 48], [20, 2], [34, 0], [44, 44]], c.c1); azMirror(P, [[31, 40], [26, 8], [33, 7], [39, 40]], c.c2);
+    P.ell(50, 62, 26, 24, c.c1);
+    P.ell(39, 72, 11, 8, AZ_CREAM); P.ell(61, 72, 11, 8, AZ_CREAM);
+    P.poly([[46, 64], [54, 64], [50, 69]], '#e58fa0'); P.rect(46, 78, 8, 7, AZ_CREAM); P.line(50, 78, 50, 85, 1.5, P.ink);
+    P.ell(39, 56, 4, 4.5, P.ink); P.ell(61, 56, 4, 4.5, P.ink); P.rect(38, 54, 2, 2, AZ_CREAM); P.rect(60, 54, 2, 2, AZ_CREAM);
+    for (const s of [1, -1]) { const X = x => s > 0 ? x : 100 - x; P.line(X(30), 70, X(12), 66, 1.5, P.ink); P.line(X(30), 74, X(12), 78, 1.5, P.ink); }
+  },
+  AZ_TIGER(P, c) { azCat(P, c, { stripes: true, muzzle: c.c2 }); },
+  AZ_PUMA(P, c) { azCat(P, c, { tear: true, nose: c.c2 }); },
+  AZ_COUGAR(P, c) { azCat(P, c, { tear: true, fangs: 82 }); },
+  AZ_SABERCAT(P, c) { azCat(P, c, { fur: shade(c.c1, 0.22), eye: c.c2, fangs: 96, inner: c.c2 }); },
+  AZ_WOLF(P, c) { azCanine(P, c, {}); },
+  AZ_HUSKY(P, c) { azCanine(P, c, { mask: true, eye: '#8fd0f0', inner: c.c2 }); }
+});
 function rasterIcon(team, w, h) {
   const key = 'ic' + team.abbr + w + 'x' + h; if (ART_CACHE[key]) return ART_CACHE[key];
   const g = new Array(w * h).fill(null);
@@ -5569,30 +5718,30 @@ function newCareer(o) {
   return C;
 }
 // Real Arizona high schools (names, mascots and colours from each school's Wikipedia infobox).
-// Crests are plain monograms in the school colours, not the schools' logos. 'tier' is the in-game
+// Crests are original mascot drawings in the school colours (art.js AZ_*), not the schools' logos. 'tier' is the in-game
 // program strength (5 = powerhouse ... 2 = small school), loosely based on recent results.
 const AZ_SCHOOLS = [
-  { k: 'SUN', city: 'Sunnyslope', name: 'Vikings', full: 'Sunnyslope High', town: 'Phoenix', mono: 'SS', c1: '#2e7d3e', c2: '#f2efe6', style: 'motion', tier: 5 },
-  { k: 'MIL', city: 'Millennium', name: 'Tigers', full: 'Millennium High', town: 'Goodyear', mono: 'M', c1: '#5a2d8c', c2: '#c0c4cc', style: 'drive', tier: 5 },
-  { k: 'SMK', city: "St. Mary's", name: 'Knights', full: "St. Mary's Catholic High", town: 'Phoenix', mono: 'SM', c1: '#145a34', c2: '#f2efe6', style: 'defense', tier: 5, rival: 'BRO' },
-  { k: 'BAS', city: 'Basha', name: 'Bears', full: 'Basha High', town: 'Chandler', mono: 'B', c1: '#1e5a3a', c2: '#c5b358', style: 'three', tier: 5 },
-  { k: 'PER', city: 'Perry', name: 'Pumas', full: 'Perry High', town: 'Gilbert', mono: 'P', c1: '#1c2a4f', c2: '#b0243a', style: 'drive', tier: 4 },
-  { k: 'MES', city: 'Mesa', name: 'Jackrabbits', full: 'Mesa High', town: 'Mesa', mono: 'ME', c1: '#4b2a7a', c2: '#f2c14e', style: 'motion', tier: 4 },
-  { k: 'CHA', city: 'Chandler', name: 'Wolves', full: 'Chandler High', town: 'Chandler', mono: 'C', c1: '#2753a6', c2: '#f2efe6', style: 'drive', tier: 4 },
-  { k: 'BRO', city: 'Brophy', name: 'Broncos', full: 'Brophy College Prep', town: 'Phoenix', mono: 'BP', c1: '#b8202f', c2: '#f2efe6', style: 'motion', tier: 4, rival: 'SMK' },
-  { k: 'PIN', city: 'Pinnacle', name: 'Pioneers', full: 'Pinnacle High', town: 'Phoenix', mono: 'PI', c1: '#1f4f9c', c2: '#f2efe6', style: 'three', tier: 4 },
-  { k: 'HAM', city: 'Hamilton', name: 'Huskies', full: 'Hamilton High', town: 'Chandler', mono: 'H', c1: '#7a1f2e', c2: '#c0c4cc', style: 'defense', tier: 4 },
-  { k: 'DVH', city: 'Desert Vista', name: 'Thunder', full: 'Desert Vista High', town: 'Phoenix', mono: 'DV', c1: '#1c2a4f', c2: '#c5b358', style: 'three', tier: 3 },
-  { k: 'SHM', city: 'Shadow Mountain', name: 'Matadors', full: 'Shadow Mountain High', town: 'Phoenix', mono: 'SH', c1: '#1f2f5c', c2: '#e0b43a', style: 'drive', tier: 4 },
-  { k: 'CAC', city: 'Cactus Shadows', name: 'Falcons', full: 'Cactus Shadows High', town: 'Cave Creek', mono: 'CS', c1: '#1f2f5c', c2: '#a7adb7', style: 'motion', tier: 3 },
-  { k: 'SAG', city: 'Saguaro', name: 'Sabercats', full: 'Saguaro High', town: 'Scottsdale', mono: 'S', c1: '#1b1b1f', c2: '#e0b43a', style: 'defense', tier: 3 },
-  { k: 'CDS', city: 'Corona del Sol', name: 'Aztecs', full: 'Corona del Sol High', town: 'Tempe', mono: 'CD', c1: '#c4581e', c2: '#f4d03f', style: 'three', tier: 3 },
-  { k: 'SAL', city: 'Salpointe', name: 'Lancers', full: 'Salpointe Catholic High', town: 'Tucson', mono: 'SA', c1: '#6e1f2a', c2: '#e0b43a', style: 'motion', tier: 3 },
-  { k: 'VCH', city: 'Valley Christian', name: 'Trojans', full: 'Valley Christian High', town: 'Chandler', mono: 'VC', c1: '#2a5aa8', c2: '#c0c4cc', style: 'three', tier: 3 },
-  { k: 'PXC', city: 'Phoenix Christian', name: 'Cougars', full: 'Phoenix Christian Prep', town: 'Phoenix', mono: 'PC', c1: '#2f7d45', c2: '#f2efe6', style: 'drive', tier: 2 },
-  { k: 'SCA', city: 'Scottsdale Christian', name: 'Eagles', full: 'Scottsdale Christian Academy', town: 'Phoenix', mono: 'SC', c1: '#c0262d', c2: '#1c2a4f', style: 'motion', tier: 2 },
-  { k: 'SPA', city: 'Scottsdale Prep', name: 'Spartans', full: 'Scottsdale Prep Academy', town: 'Scottsdale', mono: 'SP', c1: '#1c2a4f', c2: '#f2efe6', style: 'defense', tier: 2 },
-  { k: 'RSP', city: 'Rancho Solano', name: 'Mustangs', full: 'Rancho Solano Prep', town: 'Scottsdale', mono: 'RS', c1: '#1f4b9c', c2: '#f2c14e', style: 'drive', tier: 2 }
+  { k: 'SUN', icon: 'AZ_VIKING', city: 'Sunnyslope', name: 'Vikings', full: 'Sunnyslope High', town: 'Phoenix', mono: 'SS', c1: '#2e7d3e', c2: '#f2efe6', style: 'motion', tier: 5 },
+  { k: 'MIL', icon: 'AZ_TIGER', city: 'Millennium', name: 'Tigers', full: 'Millennium High', town: 'Goodyear', mono: 'M', c1: '#5a2d8c', c2: '#c0c4cc', style: 'drive', tier: 5 },
+  { k: 'SMK', icon: 'AZ_KNIGHT', city: "St. Mary's", name: 'Knights', full: "St. Mary's Catholic High", town: 'Phoenix', mono: 'SM', c1: '#145a34', c2: '#f2efe6', style: 'defense', tier: 5, rival: 'BRO' },
+  { k: 'BAS', icon: 'AZ_BEAR', city: 'Basha', name: 'Bears', full: 'Basha High', town: 'Chandler', mono: 'B', c1: '#1e5a3a', c2: '#c5b358', style: 'three', tier: 5 },
+  { k: 'PER', icon: 'AZ_PUMA', city: 'Perry', name: 'Pumas', full: 'Perry High', town: 'Gilbert', mono: 'P', c1: '#1c2a4f', c2: '#b0243a', style: 'drive', tier: 4 },
+  { k: 'MES', icon: 'AZ_JACKRABBIT', city: 'Mesa', name: 'Jackrabbits', full: 'Mesa High', town: 'Mesa', mono: 'ME', c1: '#4b2a7a', c2: '#f2c14e', style: 'motion', tier: 4 },
+  { k: 'CHA', icon: 'AZ_WOLF', city: 'Chandler', name: 'Wolves', full: 'Chandler High', town: 'Chandler', mono: 'C', c1: '#2753a6', c2: '#f2efe6', style: 'drive', tier: 4 },
+  { k: 'BRO', icon: 'AZ_BRONCO', city: 'Brophy', name: 'Broncos', full: 'Brophy College Prep', town: 'Phoenix', mono: 'BP', c1: '#b8202f', c2: '#f2efe6', style: 'motion', tier: 4, rival: 'SMK' },
+  { k: 'PIN', icon: 'AZ_PIONEER', city: 'Pinnacle', name: 'Pioneers', full: 'Pinnacle High', town: 'Phoenix', mono: 'PI', c1: '#1f4f9c', c2: '#f2efe6', style: 'three', tier: 4 },
+  { k: 'HAM', icon: 'AZ_HUSKY', city: 'Hamilton', name: 'Huskies', full: 'Hamilton High', town: 'Chandler', mono: 'H', c1: '#7a1f2e', c2: '#c0c4cc', style: 'defense', tier: 4 },
+  { k: 'DVH', icon: 'AZ_THUNDER', city: 'Desert Vista', name: 'Thunder', full: 'Desert Vista High', town: 'Phoenix', mono: 'DV', c1: '#1c2a4f', c2: '#c5b358', style: 'three', tier: 3 },
+  { k: 'SHM', icon: 'AZ_MATADOR', city: 'Shadow Mountain', name: 'Matadors', full: 'Shadow Mountain High', town: 'Phoenix', mono: 'SH', c1: '#1f2f5c', c2: '#e0b43a', style: 'drive', tier: 4 },
+  { k: 'CAC', icon: 'AZ_FALCON', city: 'Cactus Shadows', name: 'Falcons', full: 'Cactus Shadows High', town: 'Cave Creek', mono: 'CS', c1: '#1f2f5c', c2: '#a7adb7', style: 'motion', tier: 3 },
+  { k: 'SAG', icon: 'AZ_SABERCAT', city: 'Saguaro', name: 'Sabercats', full: 'Saguaro High', town: 'Scottsdale', mono: 'S', c1: '#1b1b1f', c2: '#e0b43a', style: 'defense', tier: 3 },
+  { k: 'CDS', icon: 'AZ_AZTEC', city: 'Corona del Sol', name: 'Aztecs', full: 'Corona del Sol High', town: 'Tempe', mono: 'CD', c1: '#c4581e', c2: '#f4d03f', style: 'three', tier: 3 },
+  { k: 'SAL', icon: 'AZ_LANCER', city: 'Salpointe', name: 'Lancers', full: 'Salpointe Catholic High', town: 'Tucson', mono: 'SA', c1: '#6e1f2a', c2: '#e0b43a', style: 'motion', tier: 3 },
+  { k: 'VCH', icon: 'AZ_TROJAN', city: 'Valley Christian', name: 'Trojans', full: 'Valley Christian High', town: 'Chandler', mono: 'VC', c1: '#2a5aa8', c2: '#c0c4cc', style: 'three', tier: 3 },
+  { k: 'PXC', icon: 'AZ_COUGAR', city: 'Phoenix Christian', name: 'Cougars', full: 'Phoenix Christian Prep', town: 'Phoenix', mono: 'PC', c1: '#2f7d45', c2: '#f2efe6', style: 'drive', tier: 2 },
+  { k: 'SCA', icon: 'AZ_EAGLE', city: 'Scottsdale Christian', name: 'Eagles', full: 'Scottsdale Christian Academy', town: 'Phoenix', mono: 'SC', c1: '#c0262d', c2: '#1c2a4f', style: 'motion', tier: 2 },
+  { k: 'SPA', icon: 'AZ_SPARTAN', city: 'Scottsdale Prep', name: 'Spartans', full: 'Scottsdale Prep Academy', town: 'Scottsdale', mono: 'SP', c1: '#1c2a4f', c2: '#f2efe6', style: 'defense', tier: 2 },
+  { k: 'RSP', icon: 'AZ_MUSTANG', city: 'Rancho Solano', name: 'Mustangs', full: 'Rancho Solano Prep', town: 'Scottsdale', mono: 'RS', c1: '#1f4b9c', c2: '#f2c14e', style: 'drive', tier: 2 }
 ];
 const AZ_TIER = {
   5: { name: 'Powerhouse', str: 4.8, exposure: 1.35, desc: 'Deep, experienced roster. Minutes are hard to earn, but scouts are always in the gym.' },
@@ -5628,8 +5777,8 @@ function makeAZLeague(mine) {
   const others = (riv ? [riv] : []).concat(rest.filter(s => s !== riv)).slice(0, 11);
   [mine].concat(others).forEach((d, i) => {
     const T = AZ_TIER[d.tier];
-    const t = teamObj(i, { city: d.city, name: d.name, abbr: d.k, icon: 'MONO', c1: d.c1, c2: d.c2, style: d.style, shape: 'shield', str: clamp(T.str + rand(-0.4, 0.4), 0.5, 5) }, 'hs');
-    t.full = d.full; t.mono = d.mono; t.town = d.town; t.brand = 'ARIZONA HIGH SCHOOL'; t.exposure = i === 0 ? T.exposure : 1;
+    const t = teamObj(i, { city: d.city, name: d.name, abbr: d.k, icon: d.icon, c1: d.c1, c2: d.c2, style: d.style, shape: 'shield', str: clamp(T.str + rand(-0.4, 0.4), 0.5, 5) }, 'hs');
+    t.full = d.full; t.town = d.town; t.brand = 'ARIZONA HIGH SCHOOL'; t.exposure = i === 0 ? T.exposure : 1;
     lg.teams.push(t);
     for (let k = 0; k < 11; k++) { const yr = k < 3 ? 3 : k < 6 ? 2 : k < 9 ? 1 : 0; const p = genLevelPlayer('hs', { pos: RH.POSITIONS[k % 5], ovr: hsOvr(yr, t.str), age: 14 + yr, tid: i, yr }); lg.players[p.id] = p; t.roster.push(p.id); }
   });
@@ -6347,7 +6496,9 @@ function saveC() {
 function loadC() {
   try {
     const raw = localStorage.getItem(slotKey(SLOT)); if (!raw) return null; const c = JSON.parse(raw); if (!c || !c.me || !c.lg) return null;
-    C = c; if (C.me.look) applyLook(C.me, C.me.look); refreshMe(); return C;
+    C = c; if (C.me.look) applyLook(C.me, C.me.look); refreshMe();
+    if (C.lg && C.lg.teams) for (const t of C.lg.teams) if (t.mono) { const d = AZ_SCHOOLS.find(s => s.k === t.abbr); if (d) { t.icon = d.icon; delete t.mono; } }
+    return C;
   } catch (e) { return null; }
 }
 function hasCareer(i = SLOT) { try { return !!localStorage.getItem(slotKey(i)); } catch (e) { return false; } }
@@ -9288,12 +9439,12 @@ function renderCreator() {
     }).join('')}</div><p class="tiny muted" style="margin:0">Your playstyle sets where you start and what is cheapest to improve. It never locks you out: every rating can be raised with skill points.</p>`;
   } else {
     const AZ = RH.AZ_SCHOOLS, sel = AZ.find(s => s.k === r.school) || AZ[AZ.length - 1], ST = RH.AZ_TIER[sel.tier];
-    const crest = (s, n) => cEm({ abbr: s.k, city: s.city, name: s.name, c1: s.c1, c2: s.c2, mono: s.mono, icon: 'MONO', shape: 'shield' }, n);
+    const crest = (s, n) => cEm({ abbr: s.k, city: s.city, name: s.name, c1: s.c1, c2: s.c2, icon: s.icon, shape: 'shield' }, n);
     const order = AZ.slice().sort((a, b) => b.tier - a.tier || a.full.localeCompare(b.full));
     body = `<div class="cr-azsel" style="--tc:${sel.c1}">${crest(sel, 64)}<div class="grow"><div class="disp cr-azn">${esc(sel.full.toUpperCase())}</div><div class="tiny">${esc(sel.name)} · ${esc(sel.town)}, Arizona</div><div class="row" style="gap:8px;margin-top:4px"><span class="pill">${esc(ST.name.toUpperCase())}</span>${starsHTML(ST.str)}</div><p class="tiny muted" style="margin:6px 0 0">${esc(ST.desc)}</p></div></div>
       <p class="disp tiny" style="margin:0">PICK YOUR SCHOOL · ARIZONA</p>
       <div class="cr-azgrid">${order.map(s => `<button class="cr-az ${s === sel ? 'on' : ''}" data-act="crschool" data-v="${s.k}" aria-pressed="${s === sel}">${crest(s, 32)}<span class="grow"><b>${esc(s.full)}</b><i>${esc(s.name)} · ${esc(s.town)}</i></span>${starsHTML(RH.AZ_TIER[s.tier].str)}</button>`).join('')}</div>
-      <p class="tiny muted" style="margin:0">Real Arizona schools. Program strength is an in-game rating; crests are simple monograms in each school's colors.</p>
+      <p class="tiny muted" style="margin:0">Real Arizona schools. Program strength is an in-game rating. Crests are original mascot drawings in each school's colors, not the official logos.</p>
       <fieldset class="panel"><legend>Career settings</legend><div class="list">
       ${crField('DIFFICULTY', `<div class="seg">${RH.DIFF_NAMES.map((n, i) => `<button class="${r.settings.difficulty === i ? 'on' : ''}" data-act="crst" data-k="difficulty" data-v="${i}">${n}</button>`).join('')}</div>`)}
       ${crField('QUARTER LENGTH', `<div class="seg">${[2, 3, 4, 5].map(q => `<button class="${r.settings.qlen === q ? 'on' : ''}" data-act="crst" data-k="qlen" data-v="${q}">${q} MIN</button>`).join('')}</div>`)}
