@@ -4065,8 +4065,8 @@ class Match {
     const lead = 0.5;
     const d0 = Math.hypot(to.x - from.x, to.y - from.y), dur = clamp(d0 / sp, 0.18, 1.1);
     const tx = clamp(to.x + to.vx * dur * lead, 1, 93), ty = clamp(to.y + to.vy * dur * lead, 1, 49);
-    const err = (100 - this.R(from, 'pas')) * 0.012;
-    b.state = 'pass'; b.owner = null; b.pass = { from, to, x0: from.x, y0: from.y, x1: tx + rand(-err, err), y1: ty + rand(-err, err), t: 0, dur, checked: new Set() };
+    const err = (100 - this.R(from, 'pas')) * 0.012, ex = rand(-err, err), ey = rand(-err, err);
+    b.state = 'pass'; b.owner = null; b.pass = { from, to, x0: from.x, y0: from.y, x1: tx + ex, y1: ty + ey, ox1: tx + ex, oy1: ty + ey, ex, ey, t: 0, dur, checked: new Set() };
     b.x = from.x; b.y = from.y; b.z = 4.5; b.lastTouch = from.ti;
     from.face = to.x > from.x ? 1 : -1;
     SFX.pass();
@@ -4465,6 +4465,7 @@ class Match {
       if (sp.move) continue;
       const userCtl = sp === this.ctrl && this.userSide != null;
       if (userCtl && (this.axis.x || this.axis.y || h === sp || this.time - this.lastInput < (this.lock ? 0.9 : 0.45))) { this.userMove(sp); continue; }
+      if (b.state === 'pass' && b.pass.to === sp && this.T[b.pass.from.ti].on.includes(sp)) { this.moveToBall(sp, b.pass.x1, b.pass.y1); continue; } // catch it first
       if (this.ext && this.ext.drive && this.ext.drive(sp, dt)) continue;
       if (this.remoteSide != null && sp === this.rpad.ctrl) { const P = this.rpad; if (P.axis.x || P.axis.y || h === sp || this.time - P.lastInput < 0.45) { this.withRemote(() => this.userMove(sp)); continue; } }
       if (h === sp) { this.aiHandler(sp, dt); continue; }
@@ -4881,6 +4882,15 @@ class Match {
       }
     } else if (b.state === 'pass') {
       const p = b.pass; p.t += dt; const k = Math.min(1, p.t / p.dur);
+      // the pass bends toward its receiver as he moves (up to 10 ft off the original spot), so a cut or a
+      // drift does not turn every pass into a turnover; a bad pass still carries the passer's error
+      const rv = p.to;
+      if (rv && k < 0.97 && p.ox1 != null && this.T[p.from.ti].on.includes(rv)) {
+        const rem = Math.max(0, p.dur - p.t), wx = clamp(rv.x + rv.vx * rem * 0.6 + p.ex, 1, 93), wy = clamp(rv.y + rv.vy * rem * 0.6 + p.ey, 1, 49), s = Math.min(1, dt * 7);
+        let nx = p.x1 + (wx - p.x1) * s, ny = p.y1 + (wy - p.y1) * s; const ox = nx - p.ox1, oy = ny - p.oy1, od = Math.hypot(ox, oy);
+        if (od > 10) { nx = p.ox1 + ox / od * 10; ny = p.oy1 + oy / od * 10; }
+        p.x1 = nx; p.y1 = ny;
+      }
       b.x = lerp(p.x0, p.x1, k); b.y = lerp(p.y0, p.y1, k); b.z = 4.5 + Math.sin(k * Math.PI) * Math.min(4, p.dur * 5);
       // interceptions
       for (const df of this.T[this.opp(p.from.ti)].on) {
@@ -4897,7 +4907,7 @@ class Match {
       }
       if (k >= 1) {
         const r = p.to; const dd = Math.hypot(r.x - b.x, r.y - b.y);
-        if (dd < 2.8 && this.T[p.from.ti].on.includes(r)) {
+        if (dd < 3.4 && this.T[p.from.ti].on.includes(r)) {
           this.lastPass = { from: p.from, to: r, t: this.time }; this.give(r); r.aiT = rand(0.1, 0.3);
           const hx = this.hx(r.ti), rd = Math.hypot(r.x - hx, r.y - 25), toward = (r.vx * (hx - r.x) + r.vy * (25 - r.y)) / (rd || 1);
           const flyer = r.p.pos === 'C' || r.p.pos === 'PF' || this.R(r, 'spd') > 78;
