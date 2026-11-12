@@ -291,8 +291,9 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 15px; font-varian
 .pf-gem::before { content: ""; position: absolute; inset: 16%; z-index: -1; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); background: var(--g4); }
 .pf-table { position: absolute; inset: 19.5%; z-index: -1; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   background: linear-gradient(165deg, var(--g1) 0%, var(--g2) 52%, var(--g3) 100%); }
-.pf-gem b { position: relative; font-family: var(--f-display); font-weight: 700; font-size: 1em; line-height: 1; margin-top: .3em; color: var(--ink); text-shadow: 0 .06em 0 rgba(255, 255, 255, .5); }
-.pf-gem em { position: absolute; top: 25%; left: 0; right: 0; text-align: center; font-style: normal; font-family: var(--f-display); font-size: .3em; line-height: 1; letter-spacing: .1em; color: var(--g4); }
+.pf-gem b { position: relative; font-family: var(--f-body); font-weight: 700; font-size: 1em; line-height: 1; letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--ink); }
+/* the OVR tag hangs off the bottom point, outside the gem, so it never crowds the number */
+.pf-badge > em { position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%); font-style: normal; font-family: var(--f-display); font-size: 8px; line-height: 1; letter-spacing: 1px; padding: 2px 3px 2px 4px; color: var(--g1); background: var(--ink); border: 1px solid var(--g3); white-space: nowrap; }
 .pf-gem::after { content: ""; position: absolute; inset: -10%; z-index: 1; pointer-events: none; transform: translateX(-130%);
   background: linear-gradient(115deg, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, .8) 47%, rgba(255, 255, 255, .15) 53%, rgba(255, 255, 255, 0) 62%); }
 .pf-badge.gold .pf-gem::after, .pf-badge.emerald .pf-gem::after, .pf-badge.amethyst .pf-gem::after { animation: pfShine 4.2s ease-in-out infinite; }
@@ -8862,7 +8863,7 @@ function interestOf(p, s) {
 }
 function ovrTier(v) { return v >= 93 ? 'amethyst' : v >= 88 ? 'emerald' : v >= 80 ? 'gold' : v >= 70 ? 'silver' : 'bronze'; }
 // the overall-rating gem: faceted diamond in the tier's metal, raised centre plate, shine sweep from gold up
-function ovrBadge(v, cls = '', label = 'OVR') { return `<span class="pf-badge ${ovrTier(v)} ${cls}" title="Overall ${v}"><span class="pf-gem"><i class="pf-table"></i><b>${v}</b>${label ? `<em>${label}</em>` : ''}</span></span>`; }
+function ovrBadge(v, cls = '', label = 'OVR') { return `<span class="pf-badge ${ovrTier(v)} ${cls}" title="Overall ${v}"><span class="pf-gem"><i class="pf-table"></i><b>${v}</b></span>${label ? `<em>${label}</em>` : ''}</span>`; }
 function showPlayer(pid, tab) {
   const s = S_(), p = RH.P(pid); if (!p) return;
   tab = tab || UI.pTab || 'overview'; UI.pTab = tab;
