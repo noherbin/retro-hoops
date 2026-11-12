@@ -4133,13 +4133,13 @@ class Match {
         const sp = tm.on[i];
         const fouledOut = sp.pf >= 6;
         if (sp === keep && !fouledOut) continue; // the fouled man shoots his own free throws
-        if (sp.energy > 44 && !fouledOut) continue;
+        if (sp.energy > 44 && (sp.fat || 0) < 34 && !fouledOut) continue; // gassed, or worn down from a long stretch
         if (this.ext && this.ext.holdSub && this.ext.holdSub(sp) && !fouledOut) continue;
-        const bench = tm.all.filter(s => !tm.on.includes(s) && s.energy > 72 && s.pf < 6 && !(this.ext && this.ext.noSub && this.ext.noSub(s)));
+        const bench = tm.all.filter(s => !tm.on.includes(s) && s.energy > 72 && (s.fat || 0) < 26 && s.pf < 6 && !(this.ext && this.ext.noSub && this.ext.noSub(s)));
         if (!bench.length) continue;
         bench.sort((a, b) => ((b.p.pos === sp.p.pos ? 12 : 0) + b.p.ovr) - ((a.p.pos === sp.p.pos ? 12 : 0) + a.p.ovr));
         const sub = bench[0];
-        if (!fouledOut && sub.p.ovr < sp.p.ovr - 10 && sp.energy > 30) continue;
+        if (!fouledOut && sub.p.ovr < sp.p.ovr - 10 && sp.energy > 30 && (sp.fat || 0) < 46) continue;
         // whistle, then the sub jogs on from his seat and the man coming out jogs off to it
         const ti = this.T.indexOf(tm); this.animateSub(ti, sp, sub);
         if (!subs) { SFX.subWhistle(); this.call('sub', { sp: sub }); }
@@ -4412,12 +4412,24 @@ class Match {
   }
   resumeFromHalf() { if (this.state === 'half') this.startPeriod(3); }
   clutch() { return this.q >= this.NP && this.clock < 30 && Math.abs(this.T[0].score - this.T[1].score) <= 5 && this.state === 'live'; }
+  // Stamina: sprinting burns the bar fast; jogging refills it slowly, standing and dead balls faster.
+  // Tiredness (sp.fat) builds the longer you stay on the floor and caps how far the bar can refill
+  // (the dark end of the bar); only the bench clears it. Better stamina ratings burn less and recover more.
   energy(dt) {
+    const live = this.state === 'live';
     for (const tm of this.T) for (const sp of tm.all) {
+      const sta = this.R(sp, 'sta'), wear = 1.5 - sta / 100, rec = 0.6 + sta / 250;
+      sp.fat = sp.fat || 0;
       if (tm.on.includes(sp)) {
-        const sf = Math.hypot(sp.vx, sp.vy) / 18;
-        sp.energy = clamp(sp.energy - (0.16 + 0.34 * sf + (sp.sprint ? 0.85 : 0)) * (1.5 - this.R(sp, 'sta') / 100) * dt, 5, 100);
-      } else sp.energy = clamp(sp.energy + (0.45 + tm.med * 0.06) * dt, 0, 100);
+        const sf = Math.min(1.2, Math.hypot(sp.vx, sp.vy) / 18), sprinting = sp.sprint && sf > 0.3;
+        sp.fat = Math.min(60, sp.fat + (0.11 + 0.15 * sf + (sprinting ? 0.18 : 0)) * wear * dt);
+        const d = sprinting ? -(1.25 + 0.2 * sf) * wear : !live ? 1.3 * rec : (0.85 - 0.5 * sf) * rec;
+        sp.energy = clamp(sp.energy + d * dt, 5, 100);
+        if (sp.energy > 100 - sp.fat) sp.energy = Math.max(5, 100 - sp.fat);
+      } else {
+        sp.fat = Math.max(0, sp.fat - (0.3 + tm.med * 0.03) * dt);
+        sp.energy = clamp(sp.energy + (0.9 + tm.med * 0.08) * dt, 0, 100 - sp.fat);
+      }
     }
   }
   idlePlayers(dt) {
@@ -5476,6 +5488,7 @@ class Match {
     ctx.fillStyle = PAL.ink; ctx.fillRect(X - 1, y - 1, w + 2, 6);
     ctx.fillStyle = '#2a3150'; ctx.fillRect(X, y, w, 4);
     ctx.fillStyle = e > 50 ? '#f2c14e' : e > 25 ? '#e9932f' : e < 14 && Math.floor(this.time * 6) % 2 ? '#ff9a7a' : '#e5533a'; ctx.fillRect(X, y, fw, 4);
+    const capW = Math.round(w * clamp(c.fat || 0, 0, 60) / 100); if (capW > 0) { ctx.fillStyle = '#12162a'; ctx.fillRect(X + w - capW, y, capW, 4); ctx.fillStyle = '#6b7396'; for (let i = X + w - capW; i < X + w; i += 2) ctx.fillRect(i, y + 1, 1, 2); }
     if (this.holder() === c && this.state === 'live' && !c.shot) { const cw = Math.min(fw, Math.max(1, Math.round(w * this.moveCost(c, 'cross') / 100))); ctx.fillStyle = '#3fc5c9'; ctx.fillRect(X + fw - cw, y, cw, 4); }
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(X, y, fw, 1);
     ctx.fillStyle = PAL.ink; for (let k = 1; k < 4; k++) ctx.fillRect(X + Math.round(w * k / 4), y, 1, 4);
@@ -7029,16 +7042,16 @@ class CareerGame {
       let out = false, why = '';
       if (me.pf >= foulLimit) { out = true; why = 'FOULED OUT'; }
       else if (trouble && share < 0.75) { out = true; why = 'FOUL TROUBLE'; }
-      else if (me.energy < 28) { out = true; why = 'NEEDS A BREATHER'; }
+      else if (me.energy < 28 || (me.fat || 0) > 44) { out = true; why = 'NEEDS A BREATHER'; }
       else if (stint > tot * 0.12 && played > share * el + tot * 0.05 && !(clutch && share >= 0.5) && !(blowout && share < 0.4)) { out = true; why = 'SUBBED OUT'; }
       if (out) {
-        const sub = tm.all.filter(s => !tm.on.includes(s) && s !== me && s.pf < foulLimit && s.energy > 55).sort((a, b) => ((b.p.pos === me.p.pos ? 10 : 0) + b.p.ovr) - ((a.p.pos === me.p.pos ? 10 : 0) + a.p.ovr))[0];
+        const sub = tm.all.filter(s => !tm.on.includes(s) && s !== me && s.pf < foulLimit && s.energy > 55 && (s.fat || 0) < 30).sort((a, b) => ((b.p.pos === me.p.pos ? 10 : 0) + b.p.ovr) - ((a.p.pos === me.p.pos ? 10 : 0) + a.p.ovr))[0];
         if (sub && m.subPair(this.side, me, sub)) { this.stint = { on: false, t0: el }; m.setAuto(true); this.watch = false; this.benchMsgT = 0; m.banner(why, 'TAKE A SEAT', 1.4, PAL.creamD); this.endPlay(null); return 1; }
       }
     } else {
       if (me.pf >= foulLimit) return 0;
       const rest = el - this.stint.t0;
-      let inn = rest > tot * 0.05 && played < share * el - tot * 0.025 && me.energy > 60 && !trouble;
+      let inn = rest > tot * 0.05 && played < share * el - tot * 0.025 && me.energy > 60 && (me.fat || 0) < 25 && !trouble;
       if (clutch && share >= 0.5 && me.energy > 40) inn = true;
       if (blowout && share < 0.4) inn = true;
       if (el < 0.02) inn = false;
@@ -7322,7 +7335,7 @@ class Practice {
   giveAt(x, y) {
     const m = this.m, me = this.me;
     m.state = 'live'; m.pendingAfter = null; m.deadT = 0; m.ft = null; m.ball.shot = null; m.ball.pass = null; m.shotPanel = null;
-    me.x = me.tx = x; me.y = me.ty = y; me.vx = me.vy = 0; me.z = 0; me.vz = 0; me.shot = null; me.move = null; me.stun = 0; me.energy = 100;
+    me.x = me.tx = x; me.y = me.ty = y; me.vx = me.vy = 0; me.z = 0; me.vz = 0; me.shot = null; me.move = null; me.stun = 0; me.energy = 100; me.fat = 0;
     m.give(me); m.ball.x = me.x; m.ball.y = me.y; m.shotClock = 99; me.face = m.hx(0) > x ? 1 : -1;
   }
   begin() { this.phase = 'count'; this.t = 0; this.cg.m.lockTo(this.me); this.setupRep(true); }
@@ -7350,7 +7363,7 @@ class Practice {
     this.parkHoop = 1; // everyone else waits at the other end
     m.state = 'live'; m.pendingAfter = null; m.ft = null; m.ball.shot = null; m.ball.pass = null;
     const [ax, ay] = this.Pd(25, 25 + rand(-6, 6)); A.x = A.tx = ax; A.y = A.ty = ay; A.vx = A.vy = 0; A.z = 0; A.shot = null; A.move = null; A.stun = 0; A.shaken = 0; A.fallen = 0; A.energy = 100;
-    const [mx, my] = this.Pd(19, ay); me.x = me.tx = mx; me.y = me.ty = my; me.vx = me.vy = 0; me.z = 0; me.energy = 100;
+    const [mx, my] = this.Pd(19, ay); me.x = me.tx = mx; me.y = me.ty = my; me.vx = me.vy = 0; me.z = 0; me.energy = 100; me.fat = 0;
     m.give(A); m.shotClock = 99; A.aiT = 0.6; this.defRes = null; this.contested = false;
   }
   // ---- controller hooks
@@ -8186,7 +8199,7 @@ function ctrlMode() { const c = ctrlPref(); if (c === 'pc' || c === 'phone') ret
 // [keys, full description, short legend label, contexts where it matters]
 const PC_KEYS = [
   [['W', 'A', 'S', 'D'], 'Move your player (arrow keys work too)', 'Move', 'off def loose'],
-  [['SHIFT'], 'Sprint while held. Burns energy faster', 'Sprint', 'off def loose'],
+  [['SHIFT'], 'Sprint while held. Burns energy; jog or stand to get it back', 'Sprint', 'off def loose'],
   [['SPACE'], 'Shoot: hold to rise and let go on the green slice. A green always goes in, but defenders in your face shrink it. Quick tap = pump fake', 'Shoot (hold)', 'off'],
   [['C'], 'Dribble move: hold a direction up/down = crossover, toward the rim = spin, away = step-back, none = hesitation. Costs energy; can shake a defender or break his ankles', 'Dribble Move', 'off'],
   [['E'], 'Pass toward the direction you are moving, or to the open man (green ring)', 'Pass', 'off'],
@@ -8201,7 +8214,7 @@ const PHONE_KEYS = [
   ['SHOOT', 'Hold, let go on the green slice (a green always goes in; contests shrink it). Tap for a pump fake. On defense it jumps to block'],
   ['MOVE', 'With the ball, the STEAL button becomes MOVE: stick up/down = crossover, toward the rim = spin, away = step-back, centered = hesitation. Costs energy'],
   ['PASS', 'Pass toward where the stick points, or to the open man'],
-  ['SPRINT', 'Hold to run faster. Burns energy'],
+  ['SPRINT', 'Hold to run faster. Burns energy; jogging and standing refill it'],
   ['SWITCH', 'Take over the defender nearest the ball'],
   ['STEAL', 'Swipe at the ball. Miss and you may foul'],
   ['BLOCK', 'Jump to block a shot or grab a rebound'],
