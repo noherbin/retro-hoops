@@ -5717,31 +5717,32 @@ function newCareer(o) {
   saveC();
   return C;
 }
-// Real Arizona high schools (names, mascots and colours from each school's Wikipedia infobox).
+// Real Arizona high schools (names, mascots and colours from each school's Wikipedia infobox; head coaches
+// from each varsity boys team's MaxPreps page, Nov 2026 - initials where MaxPreps gives only an initial).
 // Crests are original mascot drawings in the school colours (art.js AZ_*), not the schools' logos. 'tier' is the in-game
 // program strength (5 = powerhouse ... 2 = small school), loosely based on recent results.
 const AZ_SCHOOLS = [
-  { k: 'SUN', icon: 'AZ_VIKING', city: 'Sunnyslope', name: 'Vikings', full: 'Sunnyslope High', town: 'Phoenix', mono: 'SS', c1: '#2e7d3e', c2: '#f2efe6', style: 'motion', tier: 5 },
-  { k: 'MIL', icon: 'AZ_TIGER', city: 'Millennium', name: 'Tigers', full: 'Millennium High', town: 'Goodyear', mono: 'M', c1: '#5a2d8c', c2: '#c0c4cc', style: 'drive', tier: 5 },
-  { k: 'SMK', icon: 'AZ_KNIGHT', city: "St. Mary's", name: 'Knights', full: "St. Mary's Catholic High", town: 'Phoenix', mono: 'SM', c1: '#145a34', c2: '#f2efe6', style: 'defense', tier: 5, rival: 'BRO' },
-  { k: 'BAS', icon: 'AZ_BEAR', city: 'Basha', name: 'Bears', full: 'Basha High', town: 'Chandler', mono: 'B', c1: '#1e5a3a', c2: '#c5b358', style: 'three', tier: 5 },
-  { k: 'PER', icon: 'AZ_PUMA', city: 'Perry', name: 'Pumas', full: 'Perry High', town: 'Gilbert', mono: 'P', c1: '#1c2a4f', c2: '#b0243a', style: 'drive', tier: 4 },
-  { k: 'MES', icon: 'AZ_JACKRABBIT', city: 'Mesa', name: 'Jackrabbits', full: 'Mesa High', town: 'Mesa', mono: 'ME', c1: '#4b2a7a', c2: '#f2c14e', style: 'motion', tier: 4 },
-  { k: 'CHA', icon: 'AZ_WOLF', city: 'Chandler', name: 'Wolves', full: 'Chandler High', town: 'Chandler', mono: 'C', c1: '#2753a6', c2: '#f2efe6', style: 'drive', tier: 4 },
-  { k: 'BRO', icon: 'AZ_BRONCO', city: 'Brophy', name: 'Broncos', full: 'Brophy College Prep', town: 'Phoenix', mono: 'BP', c1: '#b8202f', c2: '#f2efe6', style: 'motion', tier: 4, rival: 'SMK' },
-  { k: 'PIN', icon: 'AZ_PIONEER', city: 'Pinnacle', name: 'Pioneers', full: 'Pinnacle High', town: 'Phoenix', mono: 'PI', c1: '#1f4f9c', c2: '#f2efe6', style: 'three', tier: 4 },
-  { k: 'HAM', icon: 'AZ_HUSKY', city: 'Hamilton', name: 'Huskies', full: 'Hamilton High', town: 'Chandler', mono: 'H', c1: '#7a1f2e', c2: '#c0c4cc', style: 'defense', tier: 4 },
-  { k: 'DVH', icon: 'AZ_THUNDER', city: 'Desert Vista', name: 'Thunder', full: 'Desert Vista High', town: 'Phoenix', mono: 'DV', c1: '#1c2a4f', c2: '#c5b358', style: 'three', tier: 3 },
-  { k: 'SHM', icon: 'AZ_MATADOR', city: 'Shadow Mountain', name: 'Matadors', full: 'Shadow Mountain High', town: 'Phoenix', mono: 'SH', c1: '#1f2f5c', c2: '#e0b43a', style: 'drive', tier: 4 },
-  { k: 'CAC', icon: 'AZ_FALCON', city: 'Cactus Shadows', name: 'Falcons', full: 'Cactus Shadows High', town: 'Cave Creek', mono: 'CS', c1: '#1f2f5c', c2: '#a7adb7', style: 'motion', tier: 3 },
-  { k: 'SAG', icon: 'AZ_SABERCAT', city: 'Saguaro', name: 'Sabercats', full: 'Saguaro High', town: 'Scottsdale', mono: 'S', c1: '#1b1b1f', c2: '#e0b43a', style: 'defense', tier: 3 },
-  { k: 'CDS', icon: 'AZ_AZTEC', city: 'Corona del Sol', name: 'Aztecs', full: 'Corona del Sol High', town: 'Tempe', mono: 'CD', c1: '#c4581e', c2: '#f4d03f', style: 'three', tier: 3 },
-  { k: 'SAL', icon: 'AZ_LANCER', city: 'Salpointe', name: 'Lancers', full: 'Salpointe Catholic High', town: 'Tucson', mono: 'SA', c1: '#6e1f2a', c2: '#e0b43a', style: 'motion', tier: 3 },
-  { k: 'VCH', icon: 'AZ_TROJAN', city: 'Valley Christian', name: 'Trojans', full: 'Valley Christian High', town: 'Chandler', mono: 'VC', c1: '#2a5aa8', c2: '#c0c4cc', style: 'three', tier: 3 },
-  { k: 'PXC', icon: 'AZ_COUGAR', city: 'Phoenix Christian', name: 'Cougars', full: 'Phoenix Christian Prep', town: 'Phoenix', mono: 'PC', c1: '#2f7d45', c2: '#f2efe6', style: 'drive', tier: 2 },
-  { k: 'SCA', icon: 'AZ_EAGLE', city: 'Scottsdale Christian', name: 'Eagles', full: 'Scottsdale Christian Academy', town: 'Phoenix', mono: 'SC', c1: '#c0262d', c2: '#1c2a4f', style: 'motion', tier: 2 },
-  { k: 'SPA', icon: 'AZ_SPARTAN', city: 'Scottsdale Prep', name: 'Spartans', full: 'Scottsdale Prep Academy', town: 'Scottsdale', mono: 'SP', c1: '#1c2a4f', c2: '#f2efe6', style: 'defense', tier: 2 },
-  { k: 'RSP', icon: 'AZ_MUSTANG', city: 'Rancho Solano', name: 'Mustangs', full: 'Rancho Solano Prep', town: 'Scottsdale', mono: 'RS', c1: '#1f4b9c', c2: '#f2c14e', style: 'drive', tier: 2 }
+  { k: 'SUN', coach: "Ray Portela", icon: 'AZ_VIKING', city: 'Sunnyslope', name: 'Vikings', full: 'Sunnyslope High', town: 'Phoenix', mono: 'SS', c1: '#2e7d3e', c2: '#f2efe6', style: 'motion', tier: 5 },
+  { k: 'MIL', coach: "Rich Thornton", icon: 'AZ_TIGER', city: 'Millennium', name: 'Tigers', full: 'Millennium High', town: 'Goodyear', mono: 'M', c1: '#5a2d8c', c2: '#c0c4cc', style: 'drive', tier: 5 },
+  { k: 'SMK', coach: "J. Esposito", icon: 'AZ_KNIGHT', city: "St. Mary's", name: 'Knights', full: "St. Mary's Catholic High", town: 'Phoenix', mono: 'SM', c1: '#145a34', c2: '#f2efe6', style: 'defense', tier: 5, rival: 'BRO' },
+  { k: 'BAS', coach: "Mike Grothaus", icon: 'AZ_BEAR', city: 'Basha', name: 'Bears', full: 'Basha High', town: 'Chandler', mono: 'B', c1: '#1e5a3a', c2: '#c5b358', style: 'three', tier: 5 },
+  { k: 'PER', coach: "Justin Collard", icon: 'AZ_PUMA', city: 'Perry', name: 'Pumas', full: 'Perry High', town: 'Gilbert', mono: 'P', c1: '#1c2a4f', c2: '#b0243a', style: 'drive', tier: 4 },
+  { k: 'MES', coach: "S. Stansberry", icon: 'AZ_JACKRABBIT', city: 'Mesa', name: 'Jackrabbits', full: 'Mesa High', town: 'Mesa', mono: 'ME', c1: '#4b2a7a', c2: '#f2c14e', style: 'motion', tier: 4 },
+  { k: 'CHA', coach: "J. Rother", icon: 'AZ_WOLF', city: 'Chandler', name: 'Wolves', full: 'Chandler High', town: 'Chandler', mono: 'C', c1: '#2753a6', c2: '#f2efe6', style: 'drive', tier: 4 },
+  { k: 'BRO', coach: "Matt Hooten", icon: 'AZ_BRONCO', city: 'Brophy', name: 'Broncos', full: 'Brophy College Prep', town: 'Phoenix', mono: 'BP', c1: '#b8202f', c2: '#f2efe6', style: 'motion', tier: 4, rival: 'SMK' },
+  { k: 'PIN', coach: "C. Wilde", icon: 'AZ_PIONEER', city: 'Pinnacle', name: 'Pioneers', full: 'Pinnacle High', town: 'Phoenix', mono: 'PI', c1: '#1f4f9c', c2: '#f2efe6', style: 'three', tier: 4 },
+  { k: 'HAM', coach: "K. Aldridge", icon: 'AZ_HUSKY', city: 'Hamilton', name: 'Huskies', full: 'Hamilton High', town: 'Chandler', mono: 'H', c1: '#7a1f2e', c2: '#c0c4cc', style: 'defense', tier: 4 },
+  { k: 'DVH', coach: "W. Bonner", icon: 'AZ_THUNDER', city: 'Desert Vista', name: 'Thunder', full: 'Desert Vista High', town: 'Phoenix', mono: 'DV', c1: '#1c2a4f', c2: '#c5b358', style: 'three', tier: 3 },
+  { k: 'SHM', coach: "Robert Knox", icon: 'AZ_MATADOR', city: 'Shadow Mountain', name: 'Matadors', full: 'Shadow Mountain High', town: 'Phoenix', mono: 'SH', c1: '#1f2f5c', c2: '#e0b43a', style: 'drive', tier: 4 },
+  { k: 'CAC', coach: "Zach Washut", icon: 'AZ_FALCON', city: 'Cactus Shadows', name: 'Falcons', full: 'Cactus Shadows High', town: 'Cave Creek', mono: 'CS', c1: '#1f2f5c', c2: '#a7adb7', style: 'motion', tier: 3 },
+  { k: 'SAG', coach: "Lucas Ramirez", icon: 'AZ_SABERCAT', city: 'Saguaro', name: 'Sabercats', full: 'Saguaro High', town: 'Scottsdale', mono: 'S', c1: '#1b1b1f', c2: '#e0b43a', style: 'defense', tier: 3 },
+  { k: 'CDS', coach: "Brad Minor", icon: 'AZ_AZTEC', city: 'Corona del Sol', name: 'Aztecs', full: 'Corona del Sol High', town: 'Tempe', mono: 'CD', c1: '#c4581e', c2: '#f4d03f', style: 'three', tier: 3 },
+  { k: 'SAL', coach: "Chase Babb", icon: 'AZ_LANCER', city: 'Salpointe', name: 'Lancers', full: 'Salpointe Catholic High', town: 'Tucson', mono: 'SA', c1: '#6e1f2a', c2: '#e0b43a', style: 'motion', tier: 3 },
+  { k: 'VCH', coach: "R. De Boer", icon: 'AZ_TROJAN', city: 'Valley Christian', name: 'Trojans', full: 'Valley Christian High', town: 'Chandler', mono: 'VC', c1: '#2a5aa8', c2: '#c0c4cc', style: 'three', tier: 3 },
+  { k: 'PXC', coach: "C. Millage", icon: 'AZ_COUGAR', city: 'Phoenix Christian', name: 'Cougars', full: 'Phoenix Christian Prep', town: 'Phoenix', mono: 'PC', c1: '#2f7d45', c2: '#f2efe6', style: 'drive', tier: 2 },
+  { k: 'SCA', coach: "Dave Novak", icon: 'AZ_EAGLE', city: 'Scottsdale Christian', name: 'Eagles', full: 'Scottsdale Christian Academy', town: 'Phoenix', mono: 'SC', c1: '#c0262d', c2: '#1c2a4f', style: 'motion', tier: 2 },
+  { k: 'SPA', coach: "J. MacLean", icon: 'AZ_SPARTAN', city: 'Scottsdale Prep', name: 'Spartans', full: 'Scottsdale Prep Academy', town: 'Scottsdale', mono: 'SP', c1: '#1c2a4f', c2: '#f2efe6', style: 'defense', tier: 2 },
+  { k: 'RSP', coach: "Aaron Trigg", icon: 'AZ_MUSTANG', city: 'Rancho Solano', name: 'Mustangs', full: 'Rancho Solano Prep', town: 'Scottsdale', mono: 'RS', c1: '#1f4b9c', c2: '#f2c14e', style: 'drive', tier: 2 }
 ];
 const AZ_TIER = {
   5: { name: 'Powerhouse', str: 4.8, exposure: 1.35, desc: 'Deep, experienced roster. Minutes are hard to earn, but scouts are always in the gym.' },
@@ -5778,7 +5779,7 @@ function makeAZLeague(mine) {
   [mine].concat(others).forEach((d, i) => {
     const T = AZ_TIER[d.tier];
     const t = teamObj(i, { city: d.city, name: d.name, abbr: d.k, icon: d.icon, c1: d.c1, c2: d.c2, style: d.style, shape: 'shield', str: clamp(T.str + rand(-0.4, 0.4), 0.5, 5) }, 'hs');
-    t.full = d.full; t.town = d.town; t.brand = 'ARIZONA HIGH SCHOOL'; t.exposure = i === 0 ? T.exposure : 1;
+    t.full = d.full; t.town = d.town; if (d.coach) t.coach.name = d.coach; t.brand = 'ARIZONA HIGH SCHOOL'; t.exposure = i === 0 ? T.exposure : 1;
     lg.teams.push(t);
     for (let k = 0; k < 11; k++) { const yr = k < 3 ? 3 : k < 6 ? 2 : k < 9 ? 1 : 0; const p = genLevelPlayer('hs', { pos: RH.POSITIONS[k % 5], ovr: hsOvr(yr, t.str), age: 14 + yr, tid: i, yr }); lg.players[p.id] = p; t.roster.push(p.id); }
   });
@@ -6497,7 +6498,11 @@ function loadC() {
   try {
     const raw = localStorage.getItem(slotKey(SLOT)); if (!raw) return null; const c = JSON.parse(raw); if (!c || !c.me || !c.lg) return null;
     C = c; if (C.me.look) applyLook(C.me, C.me.look); refreshMe();
-    if (C.lg && C.lg.teams) for (const t of C.lg.teams) if (t.mono) { const d = AZ_SCHOOLS.find(s => s.k === t.abbr); if (d) { t.icon = d.icon; delete t.mono; } }
+    if (C.lg && C.lg.kind === 'hs' && C.lg.teams) for (const t of C.lg.teams) { // older Arizona saves: mascot crests and the real head coaches
+      const d = AZ_SCHOOLS.find(s => s.k === t.abbr && s.city === t.city); if (!d) continue;
+      if (t.mono) { t.icon = d.icon; delete t.mono; }
+      if (d.coach && t.coach && t.coach.name !== d.coach) t.coach.name = d.coach;
+    }
     return C;
   } catch (e) { return null; }
 }
@@ -9314,7 +9319,7 @@ function pg(s, k) { return s.gp ? (s[k] / s.gp).toFixed(1) : '0.0'; }
 function pct(m, a) { return a ? Math.round(m / a * 100) + '%' : '—'; }
 const tallOf = h => clamp(Math.round((h - 74) / 3), 0, 4);
 function coachURL(co) { const k = 'coach' + co.name; if (CUI[k]) return CUI[k]; const c = RH.mkCanvas(24, 28), x = c.getContext('2d'); RH.drawSprite(x, { x: 12, y: 27, scale: 1, facing: 0, pose: 'stand', skin: co.skin, hair: co.hair, hairStyle: co.hairStyle, jersey: '#2b2f3d', trim: '#e9e4d6', shorts: '#22252f', pants: '#22252f', sleeves: '#2b2f3d', tie: '#c8462b', tall: 0 }); return (CUI[k] = c.toDataURL()); }
-function coachSays(text, who) { const c = Cc(), co = who || RH.myTeam().coach; return `<div class="cr-coach"><img class="px" alt="" src="${coachURL(co)}"><div><b class="disp tiny">COACH ${esc(co.name.split(' ').slice(-1)[0].toUpperCase())}</b><p>${esc(text)}</p></div></div>`; void c; }
+function coachSays(text, who) { const c = Cc(), co = who || RH.myTeam().coach; return `<div class="cr-coach"><img class="px" alt="" src="${coachURL(co)}"><div><b class="disp tiny">COACH ${esc((co.name.split(' ').slice(1).join(' ') || co.name).toUpperCase())}</b><p>${esc(text)}</p></div></div>`; void c; }
 
 /* ---------- the turntable: your player in big pixels, spinning ---------- */
 const TT = { t: 0, view: 0, spin: true, last: 0, running: false };
